@@ -26,16 +26,13 @@ DisableProgramGroupPage=yes
 LicenseFile=..\LICENSE.txt
 OutputDir=..\Output
 OutputBaseFilename=DemonSynth_v{#MyAppVersion}_Windows
-SetupIconFile=..\..\Resources\Graphics\icon.ico
-WizardImageFile=wizard_large.bmp
-WizardSmallImageFile=wizard_small.bmp
+; Note: Using default Inno Setup icon and wizard images
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-UninstallDisplayIcon={app}\uninstall.ico
 UninstallDisplayName={#MyAppName}
 
 [Languages]
