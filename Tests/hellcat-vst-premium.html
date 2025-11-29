@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HELLCAT VST Engine - Premium Edition</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Rajdhani', sans-serif;
+            background: #000000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #ffffff;
+            overflow-x: hidden;
+        }
+
+        .vst-container {
+            width: 1280px;
+            height: 720px;
+            background: #050608;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            transform-origin: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+        }
+
+        /* Responsive scaling */
+        @media (max-width: 1280px) {
+            .vst-container {
+                transform: scale(0.8);
+            }
+        }
+
+        /* Top Bar */
+        .top-bar {
+            height: 60px;
+            background: linear-gradient(180deg, #111217 0%, #0a0c0f 100%);
+            border-bottom: 1px solid #1a1d22;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 25px;
+            position: relative;
+            z-index: 10;
+        }
+
+        .logo {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 24px;
+            font-weight: 900;
+            letter-spacing: 3px;
+            color: #DF1F2F;
+            text-shadow: 
+                0 0 20px rgba(223, 31, 47, 0.8),
+                0 0 40px rgba(223, 31, 47, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo::before {
+            content: '⚡';
+            font-size: 28px;
+            animation: pulse 2s ease-in-out infinite;
+            filter: drop-shadow(0 0 10px rgba(223, 31, 47, 0.8));
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .preset-browser {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #0a0c0f;
+            padding: 8px 15px;
+            border-radius: 6px;
+            border: 1px solid #1a1d22;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .preset-browser:hover {
+            border-color: #DF1F2F;
+            box-shadow: 0 0 15px rgba(223, 31, 47, 0.3);
+        }
+
+        .preset-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #ffffff;
+            min-width: 150px;
+        }
+
+        .preset-arrow {
+            color: #DF1F2F;
+            font-size: 16px;
+        }
+
+        .engine-mode {
+            display: flex;
+            gap: 2px;
+            background: #0a0c0f;
+            padding: 4px;
+            border-radius: 8px;
+            border: 1px solid #1a1d22;
+        }
+
+        .mode-button {
+            padding: 8px 20px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            border: none;
+            background: transparent;
+            color: #666;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-radius: 6px;
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        .mode-button.active {
+            background: linear-gradient(180deg, #DF1F2F 0%, #a01620 100%);
+            color: #ffffff;
+            box-shadow: 
+                0 0 20px rgba(223, 31, 47, 0.6),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        .mode-button.eco.active {
+            background: linear-gradient(180deg, #4CAF50 0%, #2e7d32 100%);
+            box-shadow: 
+                0 0 20px rgba(76, 175, 80, 0.6),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        .mode-button.sport.active {
+            background: linear-gradient(180deg, #FF9800 0%, #d47600 100%);
+            box-shadow: 
+                0 0 20px rgba(255, 152, 0, 0.6),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        .output-meter {
+            display: flex;
+            gap: 3px;
+            align-items: flex-end;
+            height: 30px;
+        }
+
+        .meter-bar {
+            width: 4px;
+            background: #1a1d22;
+            border-radius: 2px;
+            transition: all 0.1s;
+        }
+
+        .meter-bar.active {
+            background: linear-gradient(180deg, #DF1F2F 0%, #4CAF50 100%);
+            box-shadow: 0 0 10px rgba(223, 31, 47, 0.8);
+        }
+
+        /* Main Content Area */
+        .main-content {
+            flex: 1;
+            display: flex;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        /* Gauge Clusters */
+        .gauge-cluster {
+            width: 300px;
+            position: relative;
+        }
+
+        .cluster-panel {
+            width: 100%;
+            height: 100%;
+            background: #111217;
+            border-radius: 15px;
+            padding: 20px;
+            border: 1px solid #1a1d22;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 
+                inset 0 0 40px rgba(0, 0, 0, 0.5),
+                0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Enhanced carbon fiber texture */
+        .cluster-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                repeating-linear-gradient(
+                    0deg,
+                    rgba(0, 0, 0, 0.1) 0px,
+                    rgba(255, 255, 255, 0.03) 1px,
+                    rgba(0, 0, 0, 0.1) 2px
+                ),
+                repeating-linear-gradient(
+                    90deg,
+                    rgba(0, 0, 0, 0.1) 0px,
+                    rgba(255, 255, 255, 0.03) 1px,
+                    rgba(0, 0, 0, 0.1) 2px
+                );
+            background-size: 2px 2px;
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        .gauge-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: #888;
+            text-align: center;
+            margin-bottom: 15px;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+        }
+
+        /* Circular Gauge with metallic bezel */
+        .circular-gauge {
+            width: 240px;
+            height: 240px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        /* Metallic bezel */
+        .gauge-bezel {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: 
+                radial-gradient(circle at 30% 30%, 
+                    rgba(100, 100, 100, 0.8) 0%,
+                    rgba(40, 40, 40, 0.9) 50%,
+                    rgba(20, 20, 20, 1) 100%);
+            box-shadow: 
+                0 0 0 2px #1a1a1a,
+                inset 0 0 30px rgba(0, 0, 0, 0.8),
+                inset 0 4px 10px rgba(255, 255, 255, 0.1),
+                0 8px 20px rgba(0, 0, 0, 0.6);
+            z-index: 0;
+        }
+
+        .gauge-circle {
+            width: 94%;
+            height: 94%;
+            border-radius: 50%;
+            background: 
+                radial-gradient(circle at 30% 30%, #1a1d22 0%, #0a0c0f 100%);
+            border: 3px solid #0f1114;
+            box-shadow: 
+                inset 0 0 40px rgba(0, 0, 0, 0.9),
+                0 0 30px rgba(0, 0, 0, 0.8);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1;
+        }
+
+        /* Enhanced carbon fiber center */
+        .gauge-inner {
+            width: 85%;
+            height: 85%;
+            border-radius: 50%;
+            background: 
+                radial-gradient(circle at 40% 40%, #1a1d22 0%, #050608 100%),
+                repeating-linear-gradient(
+                    45deg,
+                    #0a0c0f 0px,
+                    #0a0c0f 1px,
+                    #111217 1px,
+                    #111217 2px
+                ),
+                repeating-linear-gradient(
+                    -45deg,
+                    #0a0c0f 0px,
+                    #0a0c0f 1px,
+                    #111217 1px,
+                    #111217 2px
+                );
+            border: 2px solid #0f1114;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-shadow: 
+                inset 0 0 30px rgba(0, 0, 0, 0.8),
+                inset 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .gauge-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 56px;
+            font-weight: 900;
+            color: #ffffff;
+            text-shadow: 
+                0 0 30px rgba(223, 31, 47, 1),
+                0 0 60px rgba(223, 31, 47, 0.5),
+                0 2px 4px rgba(0, 0, 0, 0.8);
+            line-height: 1;
+            letter-spacing: -2px;
+        }
+
+        .gauge-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: #888;
+            letter-spacing: 2px;
+            margin-top: 8px;
+            text-shadow: 0 0 5px rgba(255, 255, 255, 0.3);
+        }
+
+        .gauge-sublabel {
+            font-size: 9px;
+            color: #555;
+            letter-spacing: 1px;
+        }
+
+        /* Enhanced gauge numbers */
+        .gauge-numbers {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
+
+        .gauge-number {
+            position: absolute;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            color: #ffffff;
+            text-shadow: 
+                0 0 10px rgba(223, 31, 47, 0.6),
+                0 0 20px rgba(223, 31, 47, 0.3);
+            transform: translate(-50%, -50%);
+        }
+
+        .gauge-number.danger {
+            color: #DF1F2F;
+            text-shadow: 
+                0 0 15px rgba(223, 31, 47, 1),
+                0 0 30px rgba(223, 31, 47, 0.6);
+        }
+
+        /* Gauge Arc - Enhanced */
+        .gauge-arc {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+        }
+
+        svg {
+            transform: rotate(-135deg);
+            filter: drop-shadow(0 0 8px rgba(223, 31, 47, 0.4));
+        }
+
+        .arc-background {
+            fill: none;
+            stroke: #1a1d22;
+            stroke-width: 10;
+        }
+
+        .arc-progress {
+            fill: none;
+            stroke: url(#redGradient);
+            stroke-width: 10;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.3s ease;
+            filter: drop-shadow(0 0 6px rgba(223, 31, 47, 0.8));
+        }
+
+        .arc-progress.boost {
+            stroke: url(#boostGradient);
+            stroke-width: 12;
+            filter: drop-shadow(0 0 10px rgba(223, 31, 47, 1));
+        }
+
+        /* Enhanced tick marks */
+        .tick-marks {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
+
+        .tick {
+            position: absolute;
+            width: 2px;
+            height: 12px;
+            background: linear-gradient(180deg, #3a3d42 0%, #2a2d32 100%);
+            transform-origin: center;
+            left: 50%;
+            top: 10px;
+            margin-left: -1px;
+            border-radius: 1px;
+        }
+
+        .tick.major {
+            height: 18px;
+            width: 3px;
+            background: linear-gradient(180deg, #DF1F2F 0%, #a01620 100%);
+            box-shadow: 
+                0 0 8px rgba(223, 31, 47, 0.8),
+                0 0 15px rgba(223, 31, 47, 0.4);
+        }
+
+        /* Wave Selection */
+        .wave-selection {
+            display: flex;
+            gap: 8px;
+            margin-top: 15px;
+            justify-content: center;
+        }
+
+        .wave-button {
+            width: 50px;
+            height: 35px;
+            background: linear-gradient(180deg, #0f1114 0%, #0a0c0f 100%);
+            border: 1px solid #1a1d22;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 600;
+            color: #666;
+            box-shadow: 
+                inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .wave-button:hover {
+            border-color: #DF1F2F;
+            color: #DF1F2F;
+            box-shadow: 
+                inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                0 0 10px rgba(223, 31, 47, 0.3);
+        }
+
+        .wave-button.active {
+            background: linear-gradient(180deg, #DF1F2F 0%, #a01620 100%);
+            border-color: #DF1F2F;
+            color: #ffffff;
+            box-shadow: 
+                0 0 15px rgba(223, 31, 47, 0.6),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2),
+                0 4px 8px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Filter Type Switches */
+        .filter-switches {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 15px;
+        }
+
+        .filter-button {
+            padding: 10px;
+            background: linear-gradient(180deg, #0f1114 0%, #0a0c0f 100%);
+            border: 1px solid #1a1d22;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 11px;
+            font-weight: 700;
+            color: #666;
+            text-align: center;
+            letter-spacing: 1px;
+            box-shadow: 
+                inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                0 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .filter-button:hover {
+            border-color: #DF1F2F;
+            color: #DF1F2F;
+        }
+
+        .filter-button.active {
+            background: linear-gradient(180deg, #DF1F2F 0%, #a01620 100%);
+            border-color: #DF1F2F;
+            color: #ffffff;
+            box-shadow: 
+                0 0 15px rgba(223, 31, 47, 0.6),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2),
+                0 4px 8px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Drive LEDs - Enhanced */
+        .drive-leds {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            margin-top: 12px;
+        }
+
+        .led {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #0a0c0f;
+            border: 1px solid #1a1d22;
+            transition: all 0.2s;
+            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.8);
+        }
+
+        .led.active {
+            background: radial-gradient(circle at 30% 30%, #ff4040 0%, #DF1F2F 100%);
+            box-shadow: 
+                0 0 15px rgba(223, 31, 47, 1),
+                0 0 25px rgba(223, 31, 47, 0.5),
+                inset 0 1px 2px rgba(255, 255, 255, 0.3);
+            border-color: #ff4040;
+        }
+
+        /* Center Display */
+        .center-display {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .display-panel {
+            flex: 1;
+            background: #111217;
+            border-radius: 15px;
+            border: 1px solid #1a1d22;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            box-shadow: 
+                inset 0 0 40px rgba(0, 0, 0, 0.5),
+                0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .display-tabs {
+            display: flex;
+            background: linear-gradient(180deg, #0f1114 0%, #0a0c0f 100%);
+            border-bottom: 1px solid #1a1d22;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 12px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            color: #666;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-right: 1px solid #1a1d22;
+            position: relative;
+        }
+
+        .tab:last-child {
+            border-right: none;
+        }
+
+        .tab:hover {
+            color: #DF1F2F;
+            background: rgba(223, 31, 47, 0.05);
+        }
+
+        .tab.active {
+            color: #ffffff;
+            background: #111217;
+            text-shadow: 0 0 10px rgba(223, 31, 47, 0.5);
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, 
+                transparent 0%,
+                #DF1F2F 50%,
+                transparent 100%);
+            box-shadow: 0 0 15px rgba(223, 31, 47, 0.8);
+        }
+
+        .display-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: 
+                radial-gradient(circle at 50% 0%, rgba(223, 31, 47, 0.03) 0%, transparent 60%);
+        }
+
+        /* Mod Matrix */
+        .mod-matrix {
+            display: none;
+        }
+
+        .mod-matrix.active {
+            display: block;
+        }
+
+        .matrix-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .matrix-table th {
+            padding: 10px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: #888;
+            text-align: left;
+            border-bottom: 1px solid #1a1d22;
+        }
+
+        .matrix-table td {
+            padding: 12px 10px;
+            border-bottom: 1px solid #0f1114;
+        }
+
+        .matrix-select {
+            width: 100%;
+            padding: 6px 10px;
+            background: linear-gradient(180deg, #0f1114 0%, #0a0c0f 100%);
+            border: 1px solid #1a1d22;
+            border-radius: 4px;
+            color: #ffffff;
+            font-size: 11px;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .matrix-select:hover {
+            border-color: #DF1F2F;
+        }
+
+        .matrix-select:focus {
+            outline: none;
+            border-color: #DF1F2F;
+            box-shadow: 0 0 10px rgba(223, 31, 47, 0.4);
+        }
+
+        .amount-slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #0f1114;
+            position: relative;
+            cursor: pointer;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .amount-slider::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 50%;
+            background: linear-gradient(90deg, #DF1F2F 0%, #ff4040 100%);
+            border-radius: 3px;
+            box-shadow: 0 0 10px rgba(223, 31, 47, 0.6);
+        }
+
+        /* Envelopes - Enhanced */
+        .envelopes {
+            display: none;
+        }
+
+        .envelopes.active {
+            display: block;
+        }
+
+        .envelope-graph {
+            width: 100%;
+            height: 220px;
+            background: linear-gradient(180deg, #0a0c0f 0%, #050608 100%);
+            border: 1px solid #1a1d22;
+            border-radius: 8px;
+            padding: 20px;
+            position: relative;
+            margin-bottom: 20px;
+            box-shadow: 
+                inset 0 0 30px rgba(0, 0, 0, 0.8),
+                0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .envelope-grid {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            bottom: 20px;
+            background-image: 
+                repeating-linear-gradient(0deg,
+                    rgba(223, 31, 47, 0.1) 0px,
+                    transparent 1px,
+                    transparent 40px
+                ),
+                repeating-linear-gradient(90deg,
+                    rgba(223, 31, 47, 0.1) 0px,
+                    transparent 1px,
+                    transparent 80px
+                );
+            pointer-events: none;
+        }
+
+        .envelope-path {
+            stroke: #DF1F2F;
+            stroke-width: 4;
+            fill: none;
+            filter: drop-shadow(0 0 12px rgba(223, 31, 47, 1));
+        }
+
+        .envelope-fill {
+            fill: url(#envelopeGradient);
+            opacity: 0.2;
+        }
+
+        .envelope-controls {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+
+        .envelope-param {
+            text-align: center;
+        }
+
+        .param-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+
+        .param-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 8px;
+            text-shadow: 0 0 10px rgba(223, 31, 47, 0.5);
+        }
+
+        .param-slider {
+            width: 100%;
+            height: 8px;
+            background: linear-gradient(180deg, #0f1114 0%, #0a0c0f 100%);
+            border-radius: 4px;
+            position: relative;
+            cursor: pointer;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .param-slider::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 60%;
+            background: linear-gradient(90deg, #DF1F2F 0%, #ff4040 100%);
+            border-radius: 4px;
+            box-shadow: 0 0 10px rgba(223, 31, 47, 0.6);
+        }
+
+        /* LFOs */
+        .lfos {
+            display: none;
+        }
+
+        .lfos.active {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .lfo-panel {
+            background: linear-gradient(180deg, #0f1114 0%, #0a0c0f 100%);
+            border: 1px solid #1a1d22;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 
+                inset 0 0 20px rgba(0, 0, 0, 0.5),
+                0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .lfo-title {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: #DF1F2F;
+            margin-bottom: 15px;
+            text-align: center;
+            text-shadow: 0 0 10px rgba(223, 31, 47, 0.6);
+        }
+
+        .lfo-wave {
+            width: 100%;
+            height: 80px;
+            background: #050608;
+            border: 1px solid #1a1d22;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.8);
+        }
+
+        .wave-viz {
+            stroke: #DF1F2F;
+            stroke-width: 3;
+            fill: none;
+            filter: drop-shadow(0 0 8px rgba(223, 31, 47, 0.8));
+        }
+
+        /* Bottom Bar */
+        .bottom-bar {
+            height: 140px;
+            background: linear-gradient(180deg, #0a0c0f 0%, #111217 100%);
+            border-top: 1px solid #1a1d22;
+            display: flex;
+            align-items: center;
+            padding: 0 25px;
+            gap: 30px;
+            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        /* XY Pad */
+        .xy-pad-container {
+            width: 140px;
+            height: 100px;
+        }
+
+        .xy-pad {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #0a0c0f 0%, #050608 100%);
+            border: 1px solid #1a1d22;
+            border-radius: 8px;
+            position: relative;
+            cursor: crosshair;
+            box-shadow: 
+                inset 0 0 20px rgba(0, 0, 0, 0.8),
+                0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .xy-pad::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: rgba(223, 31, 47, 0.3);
+        }
+
+        .xy-pad::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 0;
+            bottom: 0;
+            width: 1px;
+            background: rgba(223, 31, 47, 0.3);
+        }
+
+        .xy-cursor {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background: radial-gradient(circle at 30% 30%, #ff4040 0%, #DF1F2F 100%);
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 
+                0 0 20px rgba(223, 31, 47, 1),
+                0 0 40px rgba(223, 31, 47, 0.6);
+            pointer-events: none;
+            top: 50%;
+            left: 50%;
+        }
+
+        .xy-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+            font-size: 9px;
+            color: #888;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+
+        /* Macro Knobs - Enhanced */
+        .macro-knobs {
+            display: flex;
+            gap: 25px;
+            flex: 1;
+            justify-content: center;
+        }
+
+        .macro-knob {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .knob {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: 
+                radial-gradient(circle at 30% 30%, #2a2d32 0%, #0a0c0f 100%);
+            border: 3px solid #1a1d22;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 
+                inset 0 0 20px rgba(0, 0, 0, 0.8),
+                inset 0 4px 8px rgba(255, 255, 255, 0.05),
+                0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .knob:hover {
+            border-color: #DF1F2F;
+            box-shadow: 
+                inset 0 0 20px rgba(0, 0, 0, 0.8),
+                inset 0 4px 8px rgba(255, 255, 255, 0.05),
+                0 0 25px rgba(223, 31, 47, 0.4);
+        }
+
+        .knob::before {
+            content: '';
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            width: 4px;
+            height: 22px;
+            background: linear-gradient(180deg, #ff4040 0%, #DF1F2F 100%);
+            transform: translateX(-50%);
+            border-radius: 2px;
+            box-shadow: 
+                0 0 12px rgba(223, 31, 47, 1),
+                0 0 20px rgba(223, 31, 47, 0.5);
+        }
+
+        .knob-label {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            color: #DF1F2F;
+            text-shadow: 0 0 10px rgba(223, 31, 47, 0.6);
+        }
+
+        .knob-value {
+            font-size: 13px;
+            font-weight: 700;
+            color: #ffffff;
+        }
+
+        /* Transport Buttons - Enhanced */
+        .transport-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .transport-button {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            border: 2px solid #1a1d22;
+            background: linear-gradient(180deg, #1a1d22 0%, #0a0c0f 100%);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: #666;
+            box-shadow: 
+                inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .transport-button:hover {
+            border-color: #DF1F2F;
+            color: #DF1F2F;
+            box-shadow: 
+                inset 0 1px 0 rgba(255, 255, 255, 0.05),
+                0 0 20px rgba(223, 31, 47, 0.3);
+        }
+
+        .transport-button.active {
+            background: linear-gradient(180deg, #DF1F2F 0%, #a01620 100%);
+            border-color: #DF1F2F;
+            color: #ffffff;
+            box-shadow: 
+                0 0 25px rgba(223, 31, 47, 0.8),
+                inset 0 1px 0 rgba(255, 255, 255, 0.2),
+                0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .transport-icon {
+            font-size: 20px;
+            filter: drop-shadow(0 0 8px rgba(223, 31, 47, 0.6));
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0a0c0f;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, #1a1d22 0%, #0f1114 100%);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(180deg, #DF1F2F 0%, #a01620 100%);
+        }
+    </style>
+</head>
+<body>
+    <div class="vst-container">
+        <!-- SVG Gradients -->
+        <svg width="0" height="0">
+            <defs>
+                <linearGradient id="redGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" style="stop-color:#a01620;stop-opacity:1" />
+                    <stop offset="50%" style="stop-color:#DF1F2F;stop-opacity:1" />
+                    <stop offset="100%" style="stop-color:#ff4040;stop-opacity:1" />
+                </linearGradient>
+                <linearGradient id="boostGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" style="stop-color:#FF9800;stop-opacity:1" />
+                    <stop offset="50%" style="stop-color:#DF1F2F;stop-opacity:1" />
+                    <stop offset="100%" style="stop-color:#ff4040;stop-opacity:1" />
+                </linearGradient>
+                <linearGradient id="envelopeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" style="stop-color:#DF1F2F;stop-opacity:0.4" />
+                    <stop offset="100%" style="stop-color:#DF1F2F;stop-opacity:0" />
+                </linearGradient>
+            </defs>
+        </svg>
+
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="logo">HELLCAT</div>
+            
+            <div class="preset-browser">
+                <span class="preset-name">Dark Energy</span>
+                <span class="preset-arrow">▼</span>
+            </div>
+
+            <div class="engine-mode">
+                <button class="mode-button eco">ECO</button>
+                <button class="mode-button sport">SPORT</button>
+                <button class="mode-button active">TRACK</button>
+            </div>
+
+            <div class="output-meter">
+                <div class="meter-bar active" style="height: 40%"></div>
+                <div class="meter-bar active" style="height: 55%"></div>
+                <div class="meter-bar active" style="height: 70%"></div>
+                <div class="meter-bar active" style="height: 85%"></div>
+                <div class="meter-bar active" style="height: 95%"></div>
+                <div class="meter-bar active" style="height: 100%"></div>
+                <div class="meter-bar active" style="height: 90%"></div>
+                <div class="meter-bar active" style="height: 75%"></div>
+                <div class="meter-bar" style="height: 50%"></div>
+                <div class="meter-bar" style="height: 30%"></div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Cluster: Oscillator -->
+            <div class="gauge-cluster">
+                <div class="cluster-panel">
+                    <div class="gauge-title">OSCILLATOR ENGINE</div>
+                    
+                    <div class="circular-gauge">
+                        <div class="gauge-bezel"></div>
+                        <div class="gauge-circle">
+                            <!-- Tick Marks -->
+                            <div class="tick-marks" id="oscTicks"></div>
+                            
+                            <!-- Numbers -->
+                            <div class="gauge-numbers" id="oscNumbers"></div>
+                            
+                            <!-- Arc -->
+                            <svg class="gauge-arc" viewBox="0 0 240 240">
+                                <circle class="arc-background" cx="120" cy="120" r="100" 
+                                    stroke-dasharray="471" stroke-dashoffset="117.75"/>
+                                <circle class="arc-progress" cx="120" cy="120" r="100" 
+                                    stroke-dasharray="471" stroke-dashoffset="235.5"/>
+                            </svg>
+                            
+                            <div class="gauge-inner">
+                                <div class="gauge-value">8</div>
+                                <div class="gauge-label">VOICES</div>
+                                <div class="gauge-sublabel">UNISON</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="wave-selection">
+                        <div class="wave-button active">SAW</div>
+                        <div class="wave-button">SQR</div>
+                        <div class="wave-button">TRI</div>
+                        <div class="wave-button">SIN</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Display -->
+            <div class="center-display">
+                <div class="display-panel">
+                    <div class="display-tabs">
+                        <div class="tab">MOD MATRIX</div>
+                        <div class="tab active">ENVELOPES</div>
+                        <div class="tab">LFOs</div>
+                    </div>
+                    
+                    <div class="display-content">
+                        <!-- Mod Matrix -->
+                        <div class="mod-matrix">
+                            <table class="matrix-table">
+                                <thead>
+                                    <tr>
+                                        <th>SOURCE</th>
+                                        <th>DESTINATION</th>
+                                        <th>AMOUNT</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>
+                                            <select class="matrix-select">
+                                                <option>LFO 1</option>
+                                                <option>LFO 2</option>
+                                                <option>ENV 1</option>
+                                                <option>ENV 2</option>
+                                                <option>Velocity</option>
+                                                <option>Mod Wheel</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select class="matrix-select">
+                                                <option>Filter Cutoff</option>
+                                                <option>Filter Resonance</option>
+                                                <option>Osc Pitch</option>
+                                                <option>Osc Mix</option>
+                                                <option>Pan</option>
+                                                <option>Volume</option>
+                                            </select>
+                                        </td>
+                                        <td><div class="amount-slider"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <select class="matrix-select">
+                                                <option>ENV 1</option>
+                                                <option>LFO 1</option>
+                                                <option>LFO 2</option>
+                                                <option>ENV 2</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select class="matrix-select">
+                                                <option>Filter Cutoff</option>
+                                                <option>Filter Resonance</option>
+                                                <option>Osc Pitch</option>
+                                            </select>
+                                        </td>
+                                        <td><div class="amount-slider"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <select class="matrix-select">
+                                                <option>Velocity</option>
+                                                <option>LFO 1</option>
+                                                <option>LFO 2</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select class="matrix-select">
+                                                <option>Filter Resonance</option>
+                                                <option>Filter Cutoff</option>
+                                            </select>
+                                        </td>
+                                        <td><div class="amount-slider"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <select class="matrix-select">
+                                                <option>LFO 2</option>
+                                                <option>LFO 1</option>
+                                                <option>ENV 1</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select class="matrix-select">
+                                                <option>Pan</option>
+                                                <option>Volume</option>
+                                                <option>Osc Mix</option>
+                                            </select>
+                                        </td>
+                                        <td><div class="amount-slider"></div></td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <select class="matrix-select">
+                                                <option>Mod Wheel</option>
+                                                <option>Velocity</option>
+                                                <option>LFO 1</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select class="matrix-select">
+                                                <option>Osc Pitch</option>
+                                                <option>Filter Cutoff</option>
+                                            </select>
+                                        </td>
+                                        <td><div class="amount-slider"></div></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Envelopes -->
+                        <div class="envelopes active">
+                            <div class="envelope-graph">
+                                <div class="envelope-grid"></div>
+                                <svg width="100%" height="100%" viewBox="0 0 400 180" preserveAspectRatio="none">
+                                    <path class="envelope-fill" d="M 0 180 L 0 140 L 60 20 L 120 40 L 280 40 L 360 140 L 360 180 Z"/>
+                                    <path class="envelope-path" d="M 0 140 L 60 20 L 120 40 L 280 40 L 360 140"/>
+                                </svg>
+                            </div>
+                            <div class="envelope-controls">
+                                <div class="envelope-param">
+                                    <div class="param-label">ATTACK</div>
+                                    <div class="param-value">45ms</div>
+                                    <div class="param-slider"></div>
+                                </div>
+                                <div class="envelope-param">
+                                    <div class="param-label">DECAY</div>
+                                    <div class="param-value">280ms</div>
+                                    <div class="param-slider"></div>
+                                </div>
+                                <div class="envelope-param">
+                                    <div class="param-label">SUSTAIN</div>
+                                    <div class="param-value">65%</div>
+                                    <div class="param-slider"></div>
+                                </div>
+                                <div class="envelope-param">
+                                    <div class="param-label">RELEASE</div>
+                                    <div class="param-value">520ms</div>
+                                    <div class="param-slider"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- LFOs -->
+                        <div class="lfos">
+                            <div class="lfo-panel">
+                                <div class="lfo-title">LFO 1</div>
+                                <div class="lfo-wave">
+                                    <svg width="90%" height="60" viewBox="0 0 200 60">
+                                        <path class="wave-viz" d="M 0 30 Q 25 10 50 30 T 100 30 T 150 30 T 200 30"/>
+                                    </svg>
+                                </div>
+                                <div class="envelope-controls">
+                                    <div class="envelope-param">
+                                        <div class="param-label">RATE</div>
+                                        <div class="param-value">2.5Hz</div>
+                                        <div class="param-slider"></div>
+                                    </div>
+                                    <div class="envelope-param">
+                                        <div class="param-label">PHASE</div>
+                                        <div class="param-value">0°</div>
+                                        <div class="param-slider"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="lfo-panel">
+                                <div class="lfo-title">LFO 2</div>
+                                <div class="lfo-wave">
+                                    <svg width="90%" height="60" viewBox="0 0 200 60">
+                                        <path class="wave-viz" d="M 0 50 L 0 10 L 50 10 L 50 50 L 100 50 L 100 10 L 150 10 L 150 50 L 200 50"/>
+                                    </svg>
+                                </div>
+                                <div class="envelope-controls">
+                                    <div class="envelope-param">
+                                        <div class="param-label">RATE</div>
+                                        <div class="param-value">1.2Hz</div>
+                                        <div class="param-slider"></div>
+                                    </div>
+                                    <div class="envelope-param">
+                                        <div class="param-label">PHASE</div>
+                                        <div class="param-value">90°</div>
+                                        <div class="param-slider"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Cluster: Filter -->
+            <div class="gauge-cluster">
+                <div class="cluster-panel">
+                    <div class="gauge-title">FILTER DRIVE</div>
+                    
+                    <div class="circular-gauge">
+                        <div class="gauge-bezel"></div>
+                        <div class="gauge-circle">
+                            <!-- Tick Marks -->
+                            <div class="tick-marks" id="filterTicks"></div>
+                            
+                            <!-- Numbers -->
+                            <div class="gauge-numbers" id="filterNumbers"></div>
+                            
+                            <!-- Arc -->
+                            <svg class="gauge-arc" viewBox="0 0 240 240">
+                                <circle class="arc-background" cx="120" cy="120" r="100" 
+                                    stroke-dasharray="471" stroke-dashoffset="117.75"/>
+                                <circle class="arc-progress boost" cx="120" cy="120" r="100" 
+                                    stroke-dasharray="471" stroke-dashoffset="165.85"/>
+                            </svg>
+                            
+                            <div class="gauge-inner">
+                                <div class="gauge-value">7.2</div>
+                                <div class="gauge-label">CUTOFF</div>
+                                <div class="gauge-sublabel">kHz</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="drive-leds">
+                        <div class="led active"></div>
+                        <div class="led active"></div>
+                        <div class="led active"></div>
+                        <div class="led active"></div>
+                        <div class="led active"></div>
+                        <div class="led"></div>
+                        <div class="led"></div>
+                        <div class="led"></div>
+                    </div>
+
+                    <div class="filter-switches">
+                        <div class="filter-button active">LP12</div>
+                        <div class="filter-button">LP24</div>
+                        <div class="filter-button">BP</div>
+                        <div class="filter-button">HP</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Bar -->
+        <div class="bottom-bar">
+            <!-- XY Pad -->
+            <div class="xy-pad-container">
+                <div class="xy-pad">
+                    <div class="xy-cursor"></div>
+                </div>
+                <div class="xy-labels">
+                    <span>WIDTH</span>
+                    <span>FX SEND</span>
+                </div>
+            </div>
+
+            <!-- Macro Knobs -->
+            <div class="macro-knobs">
+                <div class="macro-knob">
+                    <div class="knob"></div>
+                    <div class="knob-label">BOOST</div>
+                    <div class="knob-value">72%</div>
+                </div>
+                <div class="macro-knob">
+                    <div class="knob"></div>
+                    <div class="knob-label">AIR</div>
+                    <div class="knob-value">45%</div>
+                </div>
+                <div class="macro-knob">
+                    <div class="knob"></div>
+                    <div class="knob-label">BODY</div>
+                    <div class="knob-value">63%</div>
+                </div>
+                <div class="macro-knob">
+                    <div class="knob"></div>
+                    <div class="knob-label">WARP</div>
+                    <div class="knob-value">28%</div>
+                </div>
+            </div>
+
+            <!-- Transport Buttons -->
+            <div class="transport-buttons">
+                <div class="transport-button active">
+                    <div class="transport-icon">●</div>
+                    <div>ARM</div>
+                </div>
+                <div class="transport-button">
+                    <div class="transport-icon">🔒</div>
+                    <div>LOCK</div>
+                </div>
+                <div class="transport-button">
+                    <div class="transport-icon">⚡</div>
+                    <div>NITRO</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Generate tick marks and numbers for oscillator gauge
+        const oscTicks = document.getElementById('oscTicks');
+        const oscNumbers = document.getElementById('oscNumbers');
+        const oscValues = [1, 2, 3, 4, 5, 6, 7, 8];
+        
+        for (let i = 0; i <= 16; i++) {
+            const tick = document.createElement('div');
+            tick.className = i % 2 === 0 ? 'tick major' : 'tick';
+            tick.style.transform = `rotate(${-135 + (i * 16.875)}deg)`;
+            oscTicks.appendChild(tick);
+            
+            if (i % 2 === 0 && i < 16) {
+                const number = document.createElement('div');
+                number.className = 'gauge-number';
+                const angle = (-135 + (i * 16.875)) * Math.PI / 180;
+                const radius = 110;
+                const x = 120 + radius * Math.cos(angle);
+                const y = 120 + radius * Math.sin(angle);
+                number.style.left = `${x}px`;
+                number.style.top = `${y}px`;
+                number.textContent = oscValues[i / 2];
+                oscNumbers.appendChild(number);
+            }
+        }
+
+        // Generate tick marks and numbers for filter gauge
+        const filterTicks = document.getElementById('filterTicks');
+        const filterNumbers = document.getElementById('filterNumbers');
+        const filterValues = [0, 2, 4, 6, 8, 10, 12, 14];
+        
+        for (let i = 0; i <= 16; i++) {
+            const tick = document.createElement('div');
+            tick.className = i % 2 === 0 ? 'tick major' : 'tick';
+            tick.style.transform = `rotate(${-135 + (i * 16.875)}deg)`;
+            
+            // Make high range red
+            if (i >= 12) {
+                tick.style.background = 'linear-gradient(180deg, #DF1F2F 0%, #a01620 100%)';
+                tick.style.boxShadow = '0 0 8px rgba(223, 31, 47, 0.8), 0 0 15px rgba(223, 31, 47, 0.4)';
+            }
+            
+            filterTicks.appendChild(tick);
+            
+            if (i % 2 === 0 && i < 16) {
+                const number = document.createElement('div');
+                number.className = i >= 12 ? 'gauge-number danger' : 'gauge-number';
+                const angle = (-135 + (i * 16.875)) * Math.PI / 180;
+                const radius = 110;
+                const x = 120 + radius * Math.cos(angle);
+                const y = 120 + radius * Math.sin(angle);
+                number.style.left = `${x}px`;
+                number.style.top = `${y}px`;
+                number.textContent = filterValues[i / 2];
+                filterNumbers.appendChild(number);
+            }
+        }
+
+        // Tab switching
+        const tabs = document.querySelectorAll('.tab');
+        const modMatrix = document.querySelector('.mod-matrix');
+        const envelopes = document.querySelector('.envelopes');
+        const lfos = document.querySelector('.lfos');
+
+        tabs.forEach((tab, index) => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                modMatrix.classList.remove('active');
+                envelopes.classList.remove('active');
+                lfos.classList.remove('active');
+
+                if (index === 0) modMatrix.classList.add('active');
+                if (index === 1) envelopes.classList.add('active');
+                if (index === 2) lfos.classList.add('active');
+            });
+        });
+
+        // Engine mode switching
+        const modeButtons = document.querySelectorAll('.mode-button');
+        modeButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                modeButtons.forEach(b => b.classList.remove('active'));
+                button.classList.add('active');
+            });
+        });
+
+        // Wave button switching
+        const waveButtons = document.querySelectorAll('.wave-button');
+        waveButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                waveButtons.forEach(b => b.classList.remove('active'));
+                button.classList.add('active');
+            });
+        });
+
+        // Filter button switching
+        const filterButtons = document.querySelectorAll('.filter-button');
+        filterButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                filterButtons.forEach(b => b.classList.remove('active'));
+                button.classList.add('active');
+            });
+        });
+
+        // Transport button toggling
+        const transportButtons = document.querySelectorAll('.transport-button');
+        transportButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                button.classList.toggle('active');
+            });
+        });
+
+        // XY Pad interaction
+        const xyPad = document.querySelector('.xy-pad');
+        const xyCursor = document.querySelector('.xy-cursor');
+        
+        xyPad.addEventListener('mousemove', (e) => {
+            if (e.buttons === 1) {
+                const rect = xyPad.getBoundingClientRect();
+                const x = ((e.clientX - rect.left) / rect.width) * 100;
+                const y = ((e.clientY - rect.top) / rect.height) * 100;
+                
+                xyCursor.style.left = `${Math.max(0, Math.min(100, x))}%`;
+                xyCursor.style.top = `${Math.max(0, Math.min(100, y))}%`;
+            }
+        });
+
+        // Knob rotation
+        const knobs = document.querySelectorAll('.knob');
+        knobs.forEach(knob => {
+            let rotation = Math.random() * 270 - 135;
+            knob.style.transform = `rotate(${rotation}deg)`;
+            
+            let isDragging = false;
+            let startY = 0;
+            let startRotation = rotation;
+            
+            knob.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                startY = e.clientY;
+                startRotation = rotation;
+                e.preventDefault();
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const delta = startY - e.clientY;
+                    rotation = Math.max(-135, Math.min(135, startRotation + delta));
+                    knob.style.transform = `rotate(${rotation}deg)`;
+                }
+            });
+            
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+        });
+
+        // Animate output meter
+        setInterval(() => {
+            const meterBars = document.querySelectorAll('.meter-bar');
+            meterBars.forEach(bar => {
+                const isActive = Math.random() > 0.3;
+                bar.classList.toggle('active', isActive);
+                if (isActive) {
+                    bar.style.height = `${Math.random() * 60 + 40}%`;
+                }
+            });
+        }, 100);
+
+        // Animate drive LEDs
+        setInterval(() => {
+            const leds = document.querySelectorAll('.led');
+            const activeCount = Math.floor(Math.random() * 4) + 4;
+            leds.forEach((led, i) => {
+                led.classList.toggle('active', i < activeCount);
+            });
+        }, 200);
+    </script>
+</body>
+</html>

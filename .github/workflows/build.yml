@@ -1,0 +1,90 @@
+name: Build Demon Synth
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:  # Allows manual trigger from GitHub UI
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup MSVC
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y
+
+      - name: Configure CMake
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build Release
+        run: cmake --build build --config Release
+
+      - name: Create Windows Installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "Installer\Windows\DemonSynth.iss"
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: DemonSynth-Windows-Installer
+          path: Installer/Output/*.exe
+
+      - name: Upload Windows VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: DemonSynth-Windows-VST3
+          path: build/NulyBeatsPlugin_artefacts/Release/VST3/
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build Release
+        run: cmake --build build --config Release
+
+      - name: Create Installer Apps
+        run: |
+          chmod +x Installer/macOS/create_installer_app.sh
+          ./Installer/macOS/create_installer_app.sh
+
+      - name: Create DMG
+        run: |
+          chmod +x Installer/macOS/create_dmg.sh
+          ./Installer/macOS/create_dmg.sh
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: DemonSynth-macOS-DMG
+          path: Installer/Output/*.dmg
+
+      - name: Upload macOS VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: DemonSynth-macOS-VST3
+          path: build/NulyBeatsPlugin_artefacts/Release/VST3/
+
+      - name: Upload macOS AU
+        uses: actions/upload-artifact@v4
+        with:
+          name: DemonSynth-macOS-AU
+          path: build/NulyBeatsPlugin_artefacts/Release/AU/

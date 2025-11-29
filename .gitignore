@@ -1,0 +1,29 @@
+# Build directories
+build/
+cmake-build-*/
+
+# IDE
+.idea/
+.vscode/
+*.xcodeproj/
+*.xcworkspace/
+
+# macOS
+.DS_Store
+*.dSYM/
+
+# Installer output
+Installer/Output/
+
+# Compiled installer apps (these are generated)
+Installer/macOS/*.app/
+
+# Debug logs
+DemonSynth_debug.log
+
+# User-specific files
+*.user
+*.suo
+
+# JUCE build artifacts
+JuceLibraryCode/
