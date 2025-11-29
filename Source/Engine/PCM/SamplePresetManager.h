@@ -53,16 +53,12 @@ public:
             juce::String category = categoryDir.getFileName();
             categories.push_back(category);
 
-            // Check if this is a multisampled category (like Pulsating)
-            // These have subdirectories, each representing one preset
+            // Scan subdirectories for multisampled presets
             auto subDirs = categoryDir.findChildFiles(juce::File::findDirectories, false);
-            bool isMultisampledCategory = !subDirs.isEmpty();
 
-            if (isMultisampledCategory)
+            // Process each subdirectory as a multisampled preset
+            for (const auto& presetDir : subDirs)
             {
-                // Each subdirectory is a preset - load ALL samples with their root notes
-                for (const auto& presetDir : subDirs)
-                {
                     auto wavFiles = presetDir.findChildFiles(juce::File::findFiles, false, "*.wav");
                     if (wavFiles.isEmpty())
                         continue;
@@ -204,26 +200,24 @@ public:
                     }
 
                     presets.push_back(preset);
-                }
             }
-            else
+
+            // Also scan for loose wav files directly in the category folder
+            // This handles single-sample presets like Moog Bass
+            for (const auto& sampleFile : categoryDir.findChildFiles(juce::File::findFiles, false, "*.wav;*.mp3;*.aif;*.aiff"))
             {
-                // Standard category with wav files directly in folder
-                for (const auto& sampleFile : categoryDir.findChildFiles(juce::File::findFiles, false, "*.wav;*.mp3;*.aif;*.aiff"))
-                {
-                    SamplePreset preset;
-                    preset.name = sampleFile.getFileNameWithoutExtension();
-                    preset.category = category;
-                    preset.sampleFile = sampleFile;
+                SamplePreset preset;
+                preset.name = sampleFile.getFileNameWithoutExtension();
+                preset.category = category;
+                preset.sampleFile = sampleFile;
 
-                    // Set default root note based on category
-                    if (category == "Bass")
-                        preset.rootNote = 36;  // C2 for bass sounds
-                    else
-                        preset.rootNote = 60;  // C4 for everything else
+                // Set default root note based on category
+                if (category == "Bass" || category == "Synth Bass" || category == "Moog Bass" || category.containsIgnoreCase("Bass"))
+                    preset.rootNote = 36;  // C2 for bass sounds
+                else
+                    preset.rootNote = 60;  // C4 for everything else
 
-                    presets.push_back(preset);
-                }
+                presets.push_back(preset);
             }
         }
     }
