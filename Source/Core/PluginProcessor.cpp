@@ -144,6 +144,23 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::ParameterID{"amp_release", 1}, "Amp Release",
         juce::NormalisableRange<float>(0.001f, 10.0f, 0.0f, 0.3f), 0.3f));
 
+    // Amp Envelope Curves (negative = exponential, 0 = linear, positive = logarithmic)
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"amp_attack_curve", 1}, "Amp Attack Curve",
+        juce::NormalisableRange<float>(-6.0f, 6.0f), -3.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"amp_decay_curve", 1}, "Amp Decay Curve",
+        juce::NormalisableRange<float>(-6.0f, 6.0f), 3.0f));
+
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"amp_release_curve", 1}, "Amp Release Curve",
+        juce::NormalisableRange<float>(-6.0f, 6.0f), 3.0f));
+
+    // Envelope enabled toggle
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{"amp_env_enabled", 1}, "Amp Envelope Enabled", true));
+
     // ===== Filter Envelope =====
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{"filter_attack", 1}, "Filter Attack",
@@ -250,6 +267,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::ParameterID{"chorus_depth", 1}, "Chorus Depth",
         juce::NormalisableRange<float>(0.0f, 1.0f), 0.25f));
 
+    // Flanger
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID{"flanger_enabled", 1}, "Flanger Enabled", false));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"flanger_mix", 1}, "Flanger Mix",
+        juce::NormalisableRange<float>(0.0f, 1.0f), 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"flanger_rate", 1}, "Flanger Rate",
+        juce::NormalisableRange<float>(0.05f, 5.0f), 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"flanger_depth", 1}, "Flanger Depth",
+        juce::NormalisableRange<float>(0.0f, 1.0f), 0.7f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"flanger_feedback", 1}, "Flanger Feedback",
+        juce::NormalisableRange<float>(-0.95f, 0.95f), 0.5f));
+
     // ===== Macro Controls =====
     params.push_back(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{"macro_boost", 1}, "Macro Boost",
@@ -286,6 +319,7 @@ void PluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     smoothedReverbMix.reset(sampleRate, smoothingTime);
     smoothedDelayMix.reset(sampleRate, smoothingTime);
     smoothedChorusMix.reset(sampleRate, smoothingTime);
+    smoothedFlangerMix.reset(sampleRate, smoothingTime);
 }
 
 void PluginProcessor::releaseResources()
@@ -375,6 +409,9 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     voiceParams.ampDecay = apvts.getRawParameterValue("amp_decay")->load();
     voiceParams.ampSustain = apvts.getRawParameterValue("amp_sustain")->load();
     voiceParams.ampRelease = apvts.getRawParameterValue("amp_release")->load();
+    voiceParams.ampAttackCurve = apvts.getRawParameterValue("amp_attack_curve")->load();
+    voiceParams.ampDecayCurve = apvts.getRawParameterValue("amp_decay_curve")->load();
+    voiceParams.ampReleaseCurve = apvts.getRawParameterValue("amp_release_curve")->load();
 
     voiceParams.filterAttack = apvts.getRawParameterValue("filter_attack")->load();
     voiceParams.filterDecay = apvts.getRawParameterValue("filter_decay")->load();
@@ -405,41 +442,148 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // Clear buffer once at the start
     buffer.clear();
 
-    // Synth oscillators disabled - only samples play
-    // voiceManager.processBlock(buffer, false);
+    // Update sample synth envelope parameters from APVTS
+    Engine::SampleEnvelopeParams sampleEnvParams;
+    sampleEnvParams.attack = apvts.getRawParameterValue("amp_attack")->load();
+    sampleEnvParams.decay = apvts.getRawParameterValue("amp_decay")->load();
+    sampleEnvParams.sustain = apvts.getRawParameterValue("amp_sustain")->load();
+    sampleEnvParams.release = apvts.getRawParameterValue("amp_release")->load();
+    sampleEnvParams.attackCurve = apvts.getRawParameterValue("amp_attack_curve")->load();
+    sampleEnvParams.decayCurve = apvts.getRawParameterValue("amp_decay_curve")->load();
+    sampleEnvParams.releaseCurve = apvts.getRawParameterValue("amp_release_curve")->load();
+    sampleEnvParams.enabled = apvts.getRawParameterValue("amp_env_enabled")->load() > 0.5f;
+    sampleSynth.setEnvelopeParams(sampleEnvParams);
 
     // Process sample synth - uses JUCE's Synthesiser which reads MIDI directly
     sampleSynth.processBlock(buffer, midiMessages);
 
+    // Master FX enable - controlled by Engine Start button (flanger_enabled parameter)
+    bool engineStarted = apvts.getRawParameterValue("flanger_enabled")->load() > 0.5f;
+
     // Update FX parameters with smoothed mix values
+    // All effects are disabled when Engine Start is off
     if (auto* reverb = fxRack.getEffect<DSP::ReverbEffect>())
     {
-        reverb->setEnabled(apvts.getRawParameterValue("reverb_enabled")->load() > 0.5f);
-        smoothedReverbMix.setTargetValue(apvts.getRawParameterValue("reverb_mix")->load());
-        reverb->setMix(smoothedReverbMix.getNextValue());
-        reverb->setRoomSize(apvts.getRawParameterValue("reverb_size")->load());
-        reverb->setDamping(apvts.getRawParameterValue("reverb_damping")->load());
+        bool enabled = engineStarted && apvts.getRawParameterValue("reverb_enabled")->load() > 0.5f;
+        reverb->setEnabled(enabled);
+        if (enabled)
+        {
+            smoothedReverbMix.setTargetValue(apvts.getRawParameterValue("reverb_mix")->load());
+            reverb->setMix(smoothedReverbMix.getNextValue());
+            reverb->setRoomSize(apvts.getRawParameterValue("reverb_size")->load());
+            reverb->setDamping(apvts.getRawParameterValue("reverb_damping")->load());
+        }
     }
 
     if (auto* delay = fxRack.getEffect<DSP::DelayEffect>())
     {
-        delay->setEnabled(apvts.getRawParameterValue("delay_enabled")->load() > 0.5f);
-        smoothedDelayMix.setTargetValue(apvts.getRawParameterValue("delay_mix")->load());
-        delay->setMix(smoothedDelayMix.getNextValue());
-        delay->setDelayTime(apvts.getRawParameterValue("delay_time")->load());
-        delay->setFeedback(apvts.getRawParameterValue("delay_feedback")->load());
+        bool enabled = engineStarted && apvts.getRawParameterValue("delay_enabled")->load() > 0.5f;
+        delay->setEnabled(enabled);
+        if (enabled)
+        {
+            smoothedDelayMix.setTargetValue(apvts.getRawParameterValue("delay_mix")->load());
+            delay->setMix(smoothedDelayMix.getNextValue());
+            delay->setDelayTime(apvts.getRawParameterValue("delay_time")->load());
+            delay->setFeedback(apvts.getRawParameterValue("delay_feedback")->load());
+        }
     }
 
     if (auto* chorus = fxRack.getEffect<DSP::ChorusEffect>())
     {
-        chorus->setEnabled(apvts.getRawParameterValue("chorus_enabled")->load() > 0.5f);
-        smoothedChorusMix.setTargetValue(apvts.getRawParameterValue("chorus_mix")->load());
-        chorus->setMix(smoothedChorusMix.getNextValue());
-        chorus->setRate(apvts.getRawParameterValue("chorus_rate")->load());
-        chorus->setDepth(apvts.getRawParameterValue("chorus_depth")->load());
+        bool enabled = engineStarted && apvts.getRawParameterValue("chorus_enabled")->load() > 0.5f;
+        chorus->setEnabled(enabled);
+        if (enabled)
+        {
+            smoothedChorusMix.setTargetValue(apvts.getRawParameterValue("chorus_mix")->load());
+            chorus->setMix(smoothedChorusMix.getNextValue());
+            chorus->setRate(apvts.getRawParameterValue("chorus_rate")->load());
+            chorus->setDepth(apvts.getRawParameterValue("chorus_depth")->load());
+        }
     }
 
-    // Process FX
+    if (auto* flanger = fxRack.getEffect<DSP::FlangerEffect>())
+    {
+        // Flanger is always enabled when engine is started
+        flanger->setEnabled(engineStarted);
+        if (engineStarted)
+        {
+            smoothedFlangerMix.setTargetValue(apvts.getRawParameterValue("flanger_mix")->load());
+            flanger->setMix(smoothedFlangerMix.getNextValue());
+            flanger->setRate(apvts.getRawParameterValue("flanger_rate")->load());
+            flanger->setDepth(apvts.getRawParameterValue("flanger_depth")->load());
+            flanger->setFeedback(apvts.getRawParameterValue("flanger_feedback")->load());
+        }
+    }
+
+    // ===== Macro Knob Effects =====
+    // Only active when engine is started
+    // BOOST: Drive/saturation via distortion
+    // AIR: High frequency boost via EQ high shelf
+    // BODY: Low/mid boost via EQ low shelf
+    // WARP: Modulation depth for flanger/chorus
+    float boostVal = apvts.getRawParameterValue("macro_boost")->load() / 100.0f; // 0-1
+    float airVal = apvts.getRawParameterValue("macro_air")->load() / 100.0f;     // 0-1
+    float bodyVal = apvts.getRawParameterValue("macro_body")->load() / 100.0f;   // 0-1
+    float warpVal = apvts.getRawParameterValue("macro_warp")->load() / 100.0f;   // 0-1
+
+    // BOOST -> Distortion drive (subtle saturation)
+    if (auto* distortion = fxRack.getEffect<DSP::DistortionEffect>())
+    {
+        // Enable distortion when engine started AND boost > 50%
+        bool enableDist = engineStarted && boostVal > 0.5f;
+        distortion->setEnabled(enableDist);
+        if (enableDist)
+        {
+            float drive = 1.0f + (boostVal - 0.5f) * 18.0f; // 1-10 drive range
+            distortion->setDrive(drive);
+            distortion->setMix(0.3f + (boostVal - 0.5f) * 0.4f); // 30-50% wet
+        }
+    }
+
+    // AIR -> High shelf EQ boost (brightness/air)
+    // BODY -> Low shelf EQ boost (warmth/body)
+    if (auto* eq = fxRack.getEffect<DSP::EQEffect>())
+    {
+        // Enable EQ when engine started AND either air or body is not at 50%
+        bool enableEQ = engineStarted && ((std::abs(airVal - 0.5f) > 0.01f) || (std::abs(bodyVal - 0.5f) > 0.01f));
+        eq->setEnabled(enableEQ);
+        if (enableEQ)
+        {
+            // AIR: 0-50% = cut high (-12 to 0dB), 50-100% = boost high (0 to +12dB)
+            float highGain = (airVal - 0.5f) * 24.0f; // -12 to +12 dB
+            eq->setHighGain(highGain);
+            eq->setHighFreq(6000.0f);
+
+            // BODY: 0-50% = cut low (-12 to 0dB), 50-100% = boost low (0 to +12dB)
+            float lowGain = (bodyVal - 0.5f) * 24.0f; // -12 to +12 dB
+            eq->setLowGain(lowGain);
+            eq->setLowFreq(200.0f);
+        }
+    }
+
+    // WARP -> Modulation intensity (affects flanger depth, rate, and feedback)
+    if (auto* flanger2 = fxRack.getEffect<DSP::FlangerEffect>())
+    {
+        if (flanger2->isEnabled())
+        {
+            // WARP modulates the flanger for more dramatic effect
+            float baseDepth = apvts.getRawParameterValue("flanger_depth")->load();
+            float baseRate = apvts.getRawParameterValue("flanger_rate")->load();
+            float baseFeedback = apvts.getRawParameterValue("flanger_feedback")->load();
+
+            // 0% warp = subtle (30% depth/rate), 100% warp = intense (200% depth, faster rate, more feedback)
+            float warpMult = 0.3f + warpVal * 1.7f; // 0.3 to 2.0 multiplier
+            float warpedDepth = baseDepth * warpMult;
+            float warpedRate = baseRate * (0.5f + warpVal * 1.5f); // 0.5 to 2.0x rate
+            float warpedFeedback = baseFeedback + warpVal * 0.3f; // Add up to 30% more feedback
+
+            flanger2->setDepth(juce::jlimit(0.0f, 1.0f, warpedDepth));
+            flanger2->setRate(juce::jlimit(0.05f, 10.0f, warpedRate));
+            flanger2->setFeedback(juce::jlimit(-0.95f, 0.95f, warpedFeedback));
+        }
+    }
+
+    // Process FX (will be bypassed if all effects are disabled)
     fxRack.process(buffer);
 }
 
@@ -561,10 +705,35 @@ void PluginProcessor::loadSamplePreset(const juce::String& presetName)
     const auto* preset = samplePresetManager.findPreset(presetName);
     if (preset != nullptr)
     {
-        DBG("  Found preset, loading file: " + preset->sampleFile.getFullPathName());
-        logFile.appendText("  Found preset, file: " + preset->sampleFile.getFullPathName() + "\n");
+        bool success = false;
 
-        bool success = sampleSynth.loadSample(preset->sampleFile);
+        if (preset->isMultisampled && !preset->zones.empty())
+        {
+            // Load multisampled preset with all zones
+            DBG("  Found multisampled preset with " + juce::String(preset->zones.size()) + " zones");
+            logFile.appendText("  Multisampled preset with " + juce::String(preset->zones.size()) + " zones\n");
+
+            // Build the zones vector for SampleSynth
+            std::vector<std::tuple<juce::File, int, int, int>> zones;
+            for (const auto& zone : preset->zones)
+            {
+                zones.push_back({zone.sampleFile, zone.rootNote, zone.lowKey, zone.highKey});
+                logFile.appendText("    Zone: root=" + juce::String(zone.rootNote) +
+                    " range=" + juce::String(zone.lowKey) + "-" + juce::String(zone.highKey) +
+                    " file=" + zone.sampleFile.getFileName() + "\n");
+            }
+
+            success = sampleSynth.loadMultisampledPreset(zones);
+        }
+        else
+        {
+            // Load single sample preset (backwards compatibility)
+            DBG("  Found preset, loading file: " + preset->sampleFile.getFullPathName());
+            logFile.appendText("  Found preset, file: " + preset->sampleFile.getFullPathName() + "\n");
+
+            success = sampleSynth.loadSample(preset->sampleFile);
+        }
+
         DBG("  Sample load " + juce::String(success ? "SUCCESS" : "FAILED"));
         logFile.appendText("  Sample load: " + juce::String(success ? "SUCCESS" : "FAILED") + "\n");
 

@@ -147,56 +147,109 @@ public:
     }
 };
 
-// NITRO button with lightning icon (drawn, not emoji)
-class HellcatNitroButton : public juce::Button
+// SRT-style "Push to Start" circular button - like a Dodge vehicle start button
+class HellcatPushToStartButton : public juce::Button
 {
 public:
-    HellcatNitroButton() : juce::Button("NITRO") { setClickingTogglesState(true); }
+    HellcatPushToStartButton() : juce::Button("ENGINE START") { setClickingTogglesState(true); }
 
-    void paintButton(juce::Graphics& g, bool, bool) override
+    void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
     {
-        auto bounds = getLocalBounds().toFloat().reduced(2);
+        auto bounds = getLocalBounds().toFloat();
+        float size = std::min(bounds.getWidth(), bounds.getHeight());
+        float cx = bounds.getCentreX();
+        float cy = bounds.getCentreY();
+        float radius = size * 0.48f;
+
+        // Outer chrome ring - beveled metallic look
+        {
+            juce::ColourGradient chromeGradient(
+                juce::Colour(0xff606060), cx - radius, cy - radius,
+                juce::Colour(0xff303030), cx + radius, cy + radius, false);
+            chromeGradient.addColour(0.3, juce::Colour(0xff808080));
+            chromeGradient.addColour(0.7, juce::Colour(0xff404040));
+            g.setGradientFill(chromeGradient);
+            g.fillEllipse(cx - radius, cy - radius, radius * 2, radius * 2);
+        }
+
+        // Inner button area
+        float innerRadius = radius * 0.88f;
 
         if (getToggleState())
         {
+            // ENGINE ON - Glowing red with pulsing effect
             juce::ColourGradient activeGradient(
-                HellcatColors::hellcatRed, bounds.getX(), bounds.getY(),
-                HellcatColors::redDark, bounds.getX(), bounds.getBottom(), false);
+                HellcatColors::hellcatRed.brighter(0.3f), cx, cy - innerRadius * 0.5f,
+                HellcatColors::redDark, cx, cy + innerRadius, false);
             g.setGradientFill(activeGradient);
-            g.fillRoundedRectangle(bounds, 10.0f);
+            g.fillEllipse(cx - innerRadius, cy - innerRadius, innerRadius * 2, innerRadius * 2);
+
+            // Red glow effect
+            g.setColour(HellcatColors::hellcatRed.withAlpha(0.5f));
+            g.drawEllipse(cx - radius - 4, cy - radius - 4, radius * 2 + 8, radius * 2 + 8, 6.0f);
+            g.setColour(HellcatColors::hellcatRed.withAlpha(0.25f));
+            g.drawEllipse(cx - radius - 8, cy - radius - 8, radius * 2 + 16, radius * 2 + 16, 4.0f);
         }
         else
         {
+            // ENGINE OFF - Dark with subtle gradient
             juce::ColourGradient inactiveGradient(
-                HellcatColors::panelDark.brighter(0.15f), bounds.getX(), bounds.getY(),
-                HellcatColors::panelDark, bounds.getX(), bounds.getBottom(), false);
+                juce::Colour(0xff2a2a2a), cx, cy - innerRadius * 0.5f,
+                juce::Colour(0xff1a1a1a), cx, cy + innerRadius, false);
             g.setGradientFill(inactiveGradient);
-            g.fillRoundedRectangle(bounds, 10.0f);
+            g.fillEllipse(cx - innerRadius, cy - innerRadius, innerRadius * 2, innerRadius * 2);
         }
 
-        g.setColour(getToggleState() ? HellcatColors::hellcatRed : HellcatColors::panelLight);
-        g.drawRoundedRectangle(bounds, 10.0f, 1.5f);
+        // Pressed state - slightly darker
+        if (shouldDrawButtonAsDown)
+        {
+            g.setColour(juce::Colours::black.withAlpha(0.3f));
+            g.fillEllipse(cx - innerRadius, cy - innerRadius, innerRadius * 2, innerRadius * 2);
+        }
 
-        auto iconBounds = bounds.removeFromTop(bounds.getHeight() * 0.55f);
+        // Hover highlight
+        if (shouldDrawButtonAsHighlighted && !shouldDrawButtonAsDown)
+        {
+            g.setColour(juce::Colours::white.withAlpha(0.1f));
+            g.fillEllipse(cx - innerRadius, cy - innerRadius, innerRadius * 2, innerRadius * 2);
+        }
 
-        // Draw lightning bolt
-        float boltX = iconBounds.getCentreX() - 6;
-        float boltY = iconBounds.getCentreY() - 8;
-        float boltW = 12, boltH = 16;
+        // Inner chrome ring
+        g.setColour(juce::Colour(0xff505050));
+        g.drawEllipse(cx - innerRadius, cy - innerRadius, innerRadius * 2, innerRadius * 2, 2.0f);
 
-        juce::Path bolt;
-        bolt.startNewSubPath(boltX + boltW * 0.6f, boltY);
-        bolt.lineTo(boltX + boltW * 0.25f, boltY + boltH * 0.45f);
-        bolt.lineTo(boltX + boltW * 0.5f, boltY + boltH * 0.45f);
-        bolt.lineTo(boltX + boltW * 0.35f, boltY + boltH);
-        bolt.lineTo(boltX + boltW * 0.75f, boltY + boltH * 0.55f);
-        bolt.lineTo(boltX + boltW * 0.5f, boltY + boltH * 0.55f);
-        bolt.closeSubPath();
+        // SRT logo area - draw "ENGINE" text on top, "START/STOP" below
+        float textRadius = innerRadius * 0.7f;
 
         g.setColour(getToggleState() ? juce::Colours::white : HellcatColors::textSecondary);
-        g.fillPath(bolt);
+        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), size * 0.09f, juce::Font::bold));
 
-        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 9.0f, juce::Font::bold));
-        g.drawText("NITRO", bounds, juce::Justification::centred);
+        // "ENGINE" text - moved up higher
+        g.drawText("ENGINE",
+                   juce::Rectangle<float>(cx - textRadius, cy - textRadius * 0.85f, textRadius * 2, size * 0.12f),
+                   juce::Justification::centred);
+
+        // Power symbol in center - moved up slightly
+        float symbolSize = size * 0.18f;
+        float symbolY = cy - symbolSize * 0.15f;
+
+        // Power circle (broken at top)
+        juce::Path powerCircle;
+        float arcRadius = symbolSize * 0.4f;
+        powerCircle.addArc(cx - arcRadius, symbolY - arcRadius, arcRadius * 2, arcRadius * 2,
+                          juce::MathConstants<float>::pi * 0.3f,
+                          juce::MathConstants<float>::pi * 2.7f, true);
+
+        g.setColour(getToggleState() ? juce::Colours::white : HellcatColors::textSecondary);
+        g.strokePath(powerCircle, juce::PathStrokeType(2.5f));
+
+        // Vertical line at top of power symbol
+        g.drawLine(cx, symbolY - arcRadius - 2, cx, symbolY - arcRadius * 0.3f, 2.5f);
+
+        // "START STOP" text
+        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), size * 0.08f, juce::Font::bold));
+        g.drawText("START  STOP",
+                   juce::Rectangle<float>(cx - textRadius, cy + textRadius * 0.4f, textRadius * 2, size * 0.1f),
+                   juce::Justification::centred);
     }
 };

@@ -249,18 +249,18 @@ private:
         g.drawEllipse(centerX - innerRadius, centerY - innerRadius,
                      innerRadius * 2, innerRadius * 2, 2.0f);
 
-        // Draw value text - use Orbitron Black font for Hellcat dashboard style
+        // Draw value text - use Sofachrome font for racing dashboard style
         g.setColour(HellcatColors::textPrimary);
         if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
-            g.setFont(lf->getOrbitronBlackFont(42.0f));
+            g.setFont(lf->getSofachromeFont(42.0f));
         else
             g.setFont(juce::Font(42.0f, juce::Font::bold));
 
-        // Show value with 1 decimal
+        // Show value with 1 decimal - center properly within the inner circle
         juce::String valueText = juce::String(currentValue, 1);
         auto textBounds = juce::Rectangle<float>(
-            centerX - innerRadius * 0.8f, centerY - 28,
-            innerRadius * 1.6f, 56
+            centerX - innerRadius, centerY - 24,
+            innerRadius * 2.0f, 48
         );
         g.drawText(valueText, textBounds.toNearestInt(), juce::Justification::centred);
 

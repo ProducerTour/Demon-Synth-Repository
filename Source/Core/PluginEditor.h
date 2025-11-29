@@ -25,15 +25,47 @@ public:
     EnvelopePanelContainer(HellcatEnvelopeDisplay& envDisplay) : envelopeDisplay(envDisplay)
     {
         addAndMakeVisible(envelopeDisplay);
+
+        // Create envelope enable button
+        // When envelope is ENABLED: button toggle = true, shows red (buttonOnColourId)
+        // When envelope is DISABLED: button toggle = false, shows gray (buttonColourId)
+        enableButton.setButtonText("ENV");
+        enableButton.setColour(juce::TextButton::buttonColourId, HellcatColors::panelDark);
+        enableButton.setColour(juce::TextButton::buttonOnColourId, HellcatColors::hellcatRed);
+        enableButton.setColour(juce::TextButton::textColourOffId, HellcatColors::textTertiary);
+        enableButton.setColour(juce::TextButton::textColourOnId, HellcatColors::textPrimary);
+        enableButton.setClickingTogglesState(true);
+        enableButton.setToggleState(true, juce::dontSendNotification); // Default: envelope ON
+        enableButton.onClick = [this]() {
+            // Toggle state TRUE = envelope enabled, FALSE = envelope disabled/bypassed
+            if (onEnableChanged)
+                onEnableChanged(enableButton.getToggleState());
+        };
+        addAndMakeVisible(enableButton);
     }
 
     void resized() override
     {
-        envelopeDisplay.setBounds(getLocalBounds().reduced(15));
+        auto bounds = getLocalBounds().reduced(15);
+
+        // Enable button in top-right corner
+        auto buttonArea = bounds.removeFromTop(30);
+        buttonArea = buttonArea.removeFromRight(60);
+        enableButton.setBounds(buttonArea);
+
+        envelopeDisplay.setBounds(bounds);
     }
+
+    void setEnvelopeEnabled(bool enabled)
+    {
+        enableButton.setToggleState(enabled, juce::dontSendNotification);
+    }
+
+    std::function<void(bool)> onEnableChanged;
 
 private:
     HellcatEnvelopeDisplay& envelopeDisplay;
+    juce::TextButton enableButton;
 };
 
 // Container component for LFO panels that handles its own layout
@@ -122,10 +154,8 @@ private:
     HellcatMacroKnob bodyKnob{"BODY"};
     HellcatMacroKnob warpKnob{"WARP"};
 
-    // Control buttons (ARM/LOCK/NITRO)
-    HellcatArmButton armButton;
-    HellcatLockButton lockButton;
-    HellcatNitroButton nitroButton;
+    // Engine Start button (enables FX)
+    HellcatPushToStartButton engineStartButton;
 
     // MIDI keyboard
     juce::MidiKeyboardState keyboardState;

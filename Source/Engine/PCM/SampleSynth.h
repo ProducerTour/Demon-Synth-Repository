@@ -1,9 +1,25 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "../../DSP/Modulators/ADSR.h"
 
 namespace NulyBeats {
 namespace Engine {
+
+/**
+ * Envelope parameters for sample playback
+ */
+struct SampleEnvelopeParams
+{
+    float attack = 0.01f;
+    float decay = 0.1f;
+    float sustain = 0.7f;
+    float release = 0.3f;
+    float attackCurve = -3.0f;
+    float decayCurve = 3.0f;
+    float releaseCurve = 3.0f;
+    bool enabled = true;
+};
 
 /**
  * Extended SamplerSound that stores original BPM for tempo sync
@@ -61,8 +77,9 @@ private:
 };
 
 /**
- * Custom SamplerVoice with tempo sync support
+ * Custom SamplerVoice with tempo sync support and custom ADSR envelope
  * Adjusts playback rate to match DAW tempo by modifying pitch ratio
+ * Uses NulyBeats::DSP::ADSR for proper exponential curve support
  */
 class TempoSyncSamplerVoice : public juce::SynthesiserVoice
 {
@@ -79,6 +96,12 @@ public:
         updatePitchRatio();
     }
 
+    void setEnvelopeParams(const SampleEnvelopeParams& params)
+    {
+        envParams = params;
+        updateEnvelope();
+    }
+
     bool canPlaySound(juce::SynthesiserSound* sound) override
     {
         return dynamic_cast<TempoSyncSamplerSound*>(sound) != nullptr;
@@ -91,6 +114,7 @@ public:
         {
             currentMidiNote = midiNoteNumber;
             currentPitchWheel = currentPitchWheelPosition;
+            currentVelocity = velocity;
 
             // Sample rate conversion ratio
             baseSampleRateRatio = sound->getSourceSampleRate() / getSampleRate();
@@ -107,14 +131,22 @@ public:
             lgain = velocity;
             rgain = velocity;
 
-            adsr.setSampleRate(getSampleRate());
-            adsr.setParameters({ sound->getAttackTime(), 0.0f, 1.0f, sound->getReleaseTime() });
-            adsr.noteOn();
+            // Use our custom ADSR with curve support
+            adsr.prepare(getSampleRate());
+            updateEnvelope();
+            adsr.noteOn(velocity);
 
             DBG("Note ON - MIDI: " + juce::String(midiNoteNumber) +
                 " Root: " + juce::String(sound->getMidiNoteForNormalPitch()) +
                 " Freq Ratio: " + juce::String(baseFrequencyRatio) +
-                " Pitch Ratio: " + juce::String(pitchRatio));
+                " Pitch Ratio: " + juce::String(pitchRatio) +
+                " Env Enabled: " + juce::String(envParams.enabled ? "YES" : "NO"));
+
+            // Log to file for debugging multisampled playback
+            juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("DemonSynth_debug.log");
+            logFile.appendText("NoteON: MIDI=" + juce::String(midiNoteNumber) +
+                " Root=" + juce::String(sound->getMidiNoteForNormalPitch()) +
+                " PitchRatio=" + juce::String(pitchRatio, 4) + "\n");
         }
         else
         {
@@ -124,15 +156,21 @@ public:
 
     void stopNote(float /*velocity*/, bool allowTailOff) override
     {
-        if (allowTailOff)
+        if (envParams.enabled)
         {
-            adsr.noteOff();
+            // Envelope is active - use release phase
+            if (allowTailOff)
+            {
+                adsr.noteOff();
+            }
+            else
+            {
+                clearCurrentNote();
+                adsr.reset();
+            }
         }
-        else
-        {
-            clearCurrentNote();
-            adsr.reset();
-        }
+        // When envelope is disabled, do nothing on note-off
+        // The sample will play through to completion naturally
     }
 
     void pitchWheelMoved(int newPitchWheelValue) override
@@ -172,7 +210,8 @@ public:
                     r = (inR[pos] * invAlpha + inR[pos + 1] * alpha);
                 }
 
-                auto envelopeValue = adsr.getNextSample();
+                // Apply envelope if enabled, otherwise just use velocity
+                float envelopeValue = envParams.enabled ? adsr.process() : currentVelocity;
 
                 l *= lgain * envelopeValue;
                 r *= rgain * envelopeValue;
@@ -183,7 +222,11 @@ public:
 
                 sourceSamplePosition += pitchRatio;
 
-                if (sourceSamplePosition >= data.getNumSamples() - 1 || !adsr.isActive())
+                // Check if sample ended or envelope finished
+                bool sampleEnded = sourceSamplePosition >= data.getNumSamples() - 1;
+                bool envEnded = envParams.enabled && !adsr.isActive();
+
+                if (sampleEnded || envEnded)
                 {
                     clearCurrentNote();
                     break;
@@ -208,17 +251,32 @@ private:
         // If you need tempo-synced loops, that would require time-stretching (different feature)
     }
 
+    void updateEnvelope()
+    {
+        DSP::ADSR::Parameters adsrParams;
+        adsrParams.attack = envParams.attack;
+        adsrParams.decay = envParams.decay;
+        adsrParams.sustain = envParams.sustain;
+        adsrParams.release = envParams.release;
+        adsrParams.attackCurve = envParams.attackCurve;
+        adsrParams.decayCurve = envParams.decayCurve;
+        adsrParams.releaseCurve = envParams.releaseCurve;
+        adsr.setParameters(adsrParams);
+    }
+
     double pitchRatio = 1.0;
     double sourceSamplePosition = 0.0;
     double baseSampleRateRatio = 1.0;
     double baseFrequencyRatio = 1.0;
     float lgain = 0, rgain = 0;
+    float currentVelocity = 1.0f;
     double hostBPM = 120.0;
     bool tempoSyncEnabled = false; // Disabled for one-shot samples
     int currentMidiNote = 60;
     int currentPitchWheel = 8192;
 
-    juce::ADSR adsr;
+    DSP::ADSR adsr;  // Using our custom ADSR with curve support
+    SampleEnvelopeParams envParams;
 };
 
 /**
@@ -327,6 +385,57 @@ public:
         return true;
     }
 
+    /**
+     * Load multiple samples with specified key zones (for multisampled instruments)
+     * Each zone has: file, rootNote, lowKey, highKey
+     */
+    bool loadMultisampledPreset(const std::vector<std::tuple<juce::File, int, int, int>>& zones)
+    {
+        // Clear any existing sounds
+        synth.clearSounds();
+
+        if (zones.empty())
+            return false;
+
+        DBG("Loading multisampled preset with " + juce::String(zones.size()) + " zones");
+
+        for (const auto& [file, rootNote, lowKey, highKey] : zones)
+        {
+            std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
+
+            if (reader == nullptr)
+            {
+                DBG("  Failed to load zone: " + file.getFullPathName());
+                continue;
+            }
+
+            DBG("  Zone: root=" + juce::String(rootNote) +
+                " range=" + juce::String(lowKey) + "-" + juce::String(highKey) +
+                " file=" + file.getFileName());
+
+            // Create a BigInteger for the key range this sample responds to
+            juce::BigInteger noteRange;
+            noteRange.setRange(lowKey, highKey - lowKey + 1, true);
+
+            // Create the sound with the correct root note
+            synth.addSound(new TempoSyncSamplerSound(
+                file.getFileNameWithoutExtension(),
+                *reader,
+                noteRange,
+                rootNote,  // The MIDI note this sample was recorded at
+                0.01,      // attack
+                0.1,       // release
+                30.0,      // max length
+                120.0      // BPM (default)
+            ));
+        }
+
+        if (!zones.empty())
+            currentSampleFile = std::get<0>(zones[0]);
+
+        return synth.getNumSounds() > 0;
+    }
+
     void clearSample()
     {
         synth.clearSounds();
@@ -366,6 +475,22 @@ public:
     bool isTempoSyncEnabled() const { return tempoSyncEnabled; }
     double getHostBPM() const { return hostBPM; }
     double getOriginalBPM() const { return originalBPM; }
+
+    /**
+     * Set envelope parameters for all voices
+     * This connects the UI envelope controls to the sample playback
+     */
+    void setEnvelopeParams(const SampleEnvelopeParams& params)
+    {
+        envParams = params;
+        for (int i = 0; i < synth.getNumVoices(); ++i)
+        {
+            if (auto* voice = dynamic_cast<TempoSyncSamplerVoice*>(synth.getVoice(i)))
+                voice->setEnvelopeParams(params);
+        }
+    }
+
+    const SampleEnvelopeParams& getEnvelopeParams() const { return envParams; }
 
 private:
     /**
@@ -440,6 +565,7 @@ private:
     double originalBPM = 120.0;
     bool tempoSyncEnabled = true;
     juce::File currentSampleFile;
+    SampleEnvelopeParams envParams;
 };
 
 } // namespace Engine

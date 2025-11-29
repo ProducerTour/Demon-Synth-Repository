@@ -7,10 +7,15 @@ namespace NulyBeats {
 namespace DSP {
 
 /**
- * High-quality ADSR envelope generator with:
- * - Exponential curves with adjustable curvature
- * - Retrigger and legato modes
- * - Sample-accurate timing
+ * High-quality ADSR envelope generator using EarLevel Engineering approach
+ * with proper exponential curves via targetRatio coefficients.
+ *
+ * Based on: https://www.earlevel.com/main/2013/06/03/envelope-generators-adsr-code/
+ *
+ * Curve parameter:
+ *   - Small values (0.0001 to 0.01) = mostly exponential (fast attack, slow decay)
+ *   - Large values (10 to 100) = nearly linear
+ *   - Default is 0.0001 for natural analog-style response
  */
 class ADSR
 {
@@ -27,20 +32,23 @@ public:
     struct Parameters
     {
         float attack = 0.01f;   // seconds
-        float decay = 0.1f;    // seconds
-        float sustain = 0.7f;  // 0-1
-        float release = 0.3f;  // seconds
+        float decay = 0.1f;     // seconds
+        float sustain = 0.7f;   // 0-1
+        float release = 0.3f;   // seconds
 
-        float attackCurve = -3.0f;  // Negative = exponential, 0 = linear, positive = log
-        float decayCurve = -3.0f;
-        float releaseCurve = -3.0f;
+        // Curve controls (targetRatio): small = exponential, large = linear
+        // Range: 0.0001 (very exponential) to 100.0 (nearly linear)
+        float attackCurve = 0.3f;    // Attack curve (0.0001 = instant punch, 100 = linear fade)
+        float decayCurve = 0.0001f;  // Decay curve (0.0001 = fast drop to sustain)
+        float releaseCurve = 0.0001f; // Release curve (0.0001 = natural fade out)
     };
 
     ADSR() = default;
 
-    void prepare(double sampleRate)
+    void prepare(double newSampleRate)
     {
-        this->sampleRate = sampleRate;
+        sampleRate = newSampleRate;
+        reset();
         calculateCoefficients();
     }
 
@@ -50,16 +58,9 @@ public:
         calculateCoefficients();
     }
 
-    void noteOn(float velocity = 1.0f)
+    void noteOn(float vel = 1.0f)
     {
-        this->velocity = velocity;
-
-        if (state == State::Idle || !legato)
-        {
-            // Fresh attack from current output level
-            attackBase = output;
-        }
-
+        velocity = vel;
         state = State::Attack;
     }
 
@@ -67,7 +68,6 @@ public:
     {
         if (state != State::Idle)
         {
-            releaseStart = output;
             state = State::Release;
         }
     }
@@ -77,53 +77,38 @@ public:
         switch (state)
         {
             case State::Idle:
-                output = 0.0f;
                 break;
 
             case State::Attack:
-            {
-                output += attackRate;
+                output = attackBase + output * attackCoef;
                 if (output >= 1.0f)
                 {
                     output = 1.0f;
                     state = State::Decay;
                 }
-                // Apply curve
-                float curved = applyCurve(output, params.attackCurve);
-                return curved * velocity;
-            }
+                break;
 
             case State::Decay:
-            {
-                output -= decayRate;
+                output = decayBase + output * decayCoef;
                 if (output <= params.sustain)
                 {
                     output = params.sustain;
                     state = State::Sustain;
                 }
-                // Curved decay
-                float decayProgress = (1.0f - output) / (1.0f - params.sustain);
-                float curved = 1.0f - applyCurve(decayProgress, params.decayCurve) * (1.0f - params.sustain);
-                return curved * velocity;
-            }
+                break;
 
             case State::Sustain:
-                return params.sustain * velocity;
+                output = params.sustain;
+                break;
 
             case State::Release:
-            {
-                output -= releaseRate;
-                if (output <= 0.0f)
+                output = releaseBase + output * releaseCoef;
+                if (output <= 0.0001f)
                 {
                     output = 0.0f;
                     state = State::Idle;
-                    return 0.0f;
                 }
-                // Curved release from wherever we started
-                float releaseProgress = 1.0f - (output / releaseStart);
-                float curved = releaseStart * (1.0f - applyCurve(releaseProgress, params.releaseCurve));
-                return curved * velocity;
-            }
+                break;
         }
 
         return output * velocity;
@@ -148,30 +133,62 @@ public:
     void setLegato(bool enabled) { legato = enabled; }
 
 private:
-    float applyCurve(float x, float curve) const
+    // Calculate coefficient for exponential curve
+    // targetRatio: small = more exponential, large = more linear
+    float calcCoef(float rate, float targetRatio) const
     {
-        if (std::abs(curve) < 0.01f)
-            return x; // Linear
-
-        // Attempt to create exponential/logarithmic curve
-        if (curve < 0)
-        {
-            // Exponential (fast start, slow end)
-            return (1.0f - std::exp(curve * x)) / (1.0f - std::exp(curve));
-        }
-        else
-        {
-            // Logarithmic (slow start, fast end)
-            return std::log(1.0f + (std::exp(curve) - 1.0f) * x) / curve;
-        }
+        if (rate <= 0.0f)
+            return 0.0f;
+        return std::exp(-std::log((1.0f + targetRatio) / targetRatio) / rate);
     }
 
     void calculateCoefficients()
     {
-        // Rate = 1 / (time * sampleRate)
-        attackRate = params.attack > 0.0f ? 1.0f / (params.attack * static_cast<float>(sampleRate)) : 1.0f;
-        decayRate = params.decay > 0.0f ? (1.0f - params.sustain) / (params.decay * static_cast<float>(sampleRate)) : 1.0f;
-        releaseRate = params.release > 0.0f ? 1.0f / (params.release * static_cast<float>(sampleRate)) : 1.0f;
+        // Convert curve parameters from UI range to targetRatio
+        // UI sends -6 to 6, we need to map to 0.0001 to 100
+        // For attack: negative curve = more exponential (small targetRatio)
+        // For decay/release: positive curve = more exponential (small targetRatio)
+
+        float attackTargetRatio = convertCurveToTargetRatio(params.attackCurve, true);
+        float decayTargetRatio = convertCurveToTargetRatio(params.decayCurve, false);
+        float releaseTargetRatio = convertCurveToTargetRatio(params.releaseCurve, false);
+
+        // Attack: from current level to 1.0
+        float attackRate = params.attack * static_cast<float>(sampleRate);
+        attackCoef = calcCoef(attackRate, attackTargetRatio);
+        attackBase = (1.0f + attackTargetRatio) * (1.0f - attackCoef);
+
+        // Decay: from 1.0 to sustain level
+        float decayRate = params.decay * static_cast<float>(sampleRate);
+        decayCoef = calcCoef(decayRate, decayTargetRatio);
+        decayBase = (params.sustain - decayTargetRatio) * (1.0f - decayCoef);
+
+        // Release: from sustain to 0
+        float releaseRate = params.release * static_cast<float>(sampleRate);
+        releaseCoef = calcCoef(releaseRate, releaseTargetRatio);
+        releaseBase = -releaseTargetRatio * (1.0f - releaseCoef);
+    }
+
+    // Convert UI curve value (-6 to 6) to targetRatio (0.0001 to 100)
+    float convertCurveToTargetRatio(float curve, bool isAttack) const
+    {
+        // Clamp curve to valid range
+        curve = juce::jlimit(-6.0f, 6.0f, curve);
+
+        if (isAttack)
+        {
+            // For attack: negative = more exponential (punchy), positive = more linear
+            // Map -6 to 0.0001 (very exponential), 6 to 100 (linear)
+            float normalized = (curve + 6.0f) / 12.0f; // 0 to 1
+            return 0.0001f * std::pow(1000000.0f, normalized); // 0.0001 to 100
+        }
+        else
+        {
+            // For decay/release: positive = more exponential, negative = more linear
+            // Map 6 to 0.0001 (very exponential), -6 to 100 (linear)
+            float normalized = (-curve + 6.0f) / 12.0f; // 0 to 1
+            return 0.0001f * std::pow(1000000.0f, normalized); // 0.0001 to 100
+        }
     }
 
     double sampleRate = 44100.0;
@@ -181,12 +198,13 @@ private:
     float output = 0.0f;
     float velocity = 1.0f;
 
-    float attackRate = 0.0f;
-    float decayRate = 0.0f;
-    float releaseRate = 0.0f;
-
+    // Coefficients for exponential envelope
+    float attackCoef = 0.0f;
     float attackBase = 0.0f;
-    float releaseStart = 0.0f;
+    float decayCoef = 0.0f;
+    float decayBase = 0.0f;
+    float releaseCoef = 0.0f;
+    float releaseBase = 0.0f;
 
     bool legato = false;
 };

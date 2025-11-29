@@ -99,6 +99,7 @@ private:
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedReverbMix{0.3f};
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedDelayMix{0.3f};
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedChorusMix{0.5f};
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> smoothedFlangerMix{0.5f};
 
     // Tempo sync
     double currentBPM = 120.0;

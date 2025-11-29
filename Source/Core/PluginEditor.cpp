@@ -23,6 +23,14 @@ PluginEditor::PluginEditor(PluginProcessor& p)
             showPresetBrowser();
     };
 
+    // Clicking preset name also opens browser
+    topBar.onPresetLabelClicked = [this]() {
+        if (presetBrowserVisible)
+            hidePresetBrowser();
+        else
+            showPresetBrowser();
+    };
+
     topBar.onNextPreset = [this]() { selectNextPreset(); };
     topBar.onPrevPreset = [this]() { selectPrevPreset(); };
 
@@ -61,14 +69,36 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
     // ===== Left Panel - Oscillator Engine =====
     addAndMakeVisible(oscillatorPanel);
-    oscillatorPanel.onWaveformChange = [this](int) {
-        // Connect to oscillator waveform parameter when available
+    oscillatorPanel.onWaveformChange = [this](int waveIndex) {
+        // Map UI waveform index to parameter value
+        // UI: 0=SAW, 1=SQR, 2=TRI, 3=SIN
+        // Param: 0=Sine, 1=Saw, 2=Square, 3=Triangle, 4=Pulse, 5=Noise
+        int paramValue = 0;
+        switch (waveIndex) {
+            case 0: paramValue = 1; break; // SAW -> Saw
+            case 1: paramValue = 2; break; // SQR -> Square
+            case 2: paramValue = 3; break; // TRI -> Triangle
+            case 3: paramValue = 0; break; // SIN -> Sine
+        }
+        if (auto* param = processor.getAPVTS().getParameter("osc1_wave"))
+            param->setValueNotifyingHost(static_cast<float>(paramValue) / 5.0f); // 6 wave types (0-5)
     };
 
     // ===== Right Panel - Filter Drive =====
     addAndMakeVisible(filterPanel);
-    filterPanel.onFilterTypeChange = [this](int) {
-        // Connect to filter type parameter when available
+    filterPanel.onFilterTypeChange = [this](int filterIndex) {
+        // Map UI filter index to parameter value
+        // UI: 0=LP12, 1=LP24, 2=BP, 3=HP
+        // Param: 0=LP, 1=HP, 2=BP, 3=Notch
+        int paramValue = 0;
+        switch (filterIndex) {
+            case 0: paramValue = 0; break; // LP12 -> LP
+            case 1: paramValue = 0; break; // LP24 -> LP (same type, could add slope param later)
+            case 2: paramValue = 2; break; // BP -> BP
+            case 3: paramValue = 1; break; // HP -> HP
+        }
+        if (auto* param = processor.getAPVTS().getParameter("filter_type"))
+            param->setValueNotifyingHost(static_cast<float>(paramValue) / 3.0f); // 4 filter types (0-3)
     };
 
     // ===== Center Tabbed Panel =====
@@ -86,8 +116,17 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(tabbedPanel);
 
     // ===== Bottom Section =====
-    // XY Pad
+    // XY Pad - connects to stereo width and reverb/delay mix
     addAndMakeVisible(xyPad);
+    xyPad.onValueChange = [this](float x, float y) {
+        // X axis (WIDTH) - controls unison spread (stereo width)
+        if (auto* param = processor.getAPVTS().getParameter("unison_spread"))
+            param->setValueNotifyingHost(x);
+
+        // Y axis (FX SEND) - controls reverb mix
+        if (auto* param = processor.getAPVTS().getParameter("reverb_mix"))
+            param->setValueNotifyingHost(y);
+    };
 
     // Macro Knobs
     addAndMakeVisible(boostKnob);
@@ -95,10 +134,13 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     addAndMakeVisible(bodyKnob);
     addAndMakeVisible(warpKnob);
 
-    // Control Buttons (ARM/LOCK/NITRO)
-    addAndMakeVisible(armButton);
-    addAndMakeVisible(lockButton);
-    addAndMakeVisible(nitroButton);
+    // Engine Start Button - enables flanger FX
+    addAndMakeVisible(engineStartButton);
+    engineStartButton.onClick = [this]() {
+        // Toggle flanger effect on/off
+        if (auto* param = processor.getAPVTS().getParameter("flanger_enabled"))
+            param->setValueNotifyingHost(engineStartButton.getToggleState() ? 1.0f : 0.0f);
+    };
 
     // ===== MIDI Keyboard =====
     addAndMakeVisible(keyboardComponent);
@@ -147,6 +189,44 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     lfo2Panel.onWaveChange = [this](int waveIndex) {
         if (auto* param = processor.getAPVTS().getParameter("lfo2_wave"))
             param->setValueNotifyingHost(static_cast<float>(waveIndex) / 6.0f);
+    };
+
+    // Envelope touchpoint callbacks - connect to amp envelope parameters
+    ampEnvelopeDisplay.onAttackChanged = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("amp_attack"))
+            param->setValueNotifyingHost(param->convertTo0to1(value));
+    };
+    ampEnvelopeDisplay.onDecayChanged = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("amp_decay"))
+            param->setValueNotifyingHost(param->convertTo0to1(value));
+    };
+    ampEnvelopeDisplay.onSustainChanged = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("amp_sustain"))
+            param->setValueNotifyingHost(value); // Sustain is already 0-1
+    };
+    ampEnvelopeDisplay.onReleaseChanged = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("amp_release"))
+            param->setValueNotifyingHost(param->convertTo0to1(value));
+    };
+
+    // Envelope curve callbacks - control curve tension/shape
+    ampEnvelopeDisplay.onAttackCurveChanged = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("amp_attack_curve"))
+            param->setValueNotifyingHost(param->convertTo0to1(value));
+    };
+    ampEnvelopeDisplay.onDecayCurveChanged = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("amp_decay_curve"))
+            param->setValueNotifyingHost(param->convertTo0to1(value));
+    };
+    ampEnvelopeDisplay.onReleaseCurveChanged = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("amp_release_curve"))
+            param->setValueNotifyingHost(param->convertTo0to1(value));
+    };
+
+    // Envelope enable toggle callback
+    envelopePanel->onEnableChanged = [this](bool enabled) {
+        if (auto* param = processor.getAPVTS().getParameter("amp_env_enabled"))
+            param->setValueNotifyingHost(enabled ? 1.0f : 0.0f);
     };
 
     // Load presets
@@ -243,13 +323,15 @@ void PluginEditor::resized()
     // XY Pad - left side
     xyPad.setBounds(bottomSection.removeFromLeft(140));
 
-    // Control buttons - right side (ARM/LOCK/NITRO)
-    auto buttonBounds = bottomSection.removeFromRight(210);
-    buttonBounds.reduce(5, 10);
-    int buttonWidth = buttonBounds.getWidth() / 3;
-    armButton.setBounds(buttonBounds.removeFromLeft(buttonWidth).reduced(4));
-    lockButton.setBounds(buttonBounds.removeFromLeft(buttonWidth).reduced(4));
-    nitroButton.setBounds(buttonBounds.reduced(4));
+    // Engine Start button - right side (circular, needs square bounds)
+    auto buttonBounds = bottomSection.removeFromRight(110);
+    buttonBounds.reduce(5, 5);
+    // Make it square and centered
+    int buttonSize = std::min(buttonBounds.getWidth(), buttonBounds.getHeight());
+    engineStartButton.setBounds(
+        buttonBounds.getCentreX() - buttonSize / 2,
+        buttonBounds.getCentreY() - buttonSize / 2,
+        buttonSize, buttonSize);
 
     // Macro knobs - center
     auto macrosBounds = bottomSection;
@@ -283,9 +365,38 @@ void PluginEditor::timerCallback()
     float unisonVoices = apvts.getRawParameterValue("unison_voices")->load();
     oscillatorPanel.setValue(unisonVoices);
 
+    // Update oscillator waveform display from parameter
+    int oscWave = static_cast<int>(apvts.getRawParameterValue("osc1_wave")->load());
+    // Map param value to UI: 0=Sine->3, 1=Saw->0, 2=Square->1, 3=Triangle->2
+    int uiWave = 0;
+    switch (oscWave) {
+        case 0: uiWave = 3; break; // Sine -> SIN button
+        case 1: uiWave = 0; break; // Saw -> SAW button
+        case 2: uiWave = 1; break; // Square -> SQR button
+        case 3: uiWave = 2; break; // Triangle -> TRI button
+    }
+    oscillatorPanel.setWaveform(uiWave);
+
     // Update filter panel with cutoff (convert Hz to kHz)
     float cutoffHz = apvts.getRawParameterValue("filter_cutoff")->load();
     filterPanel.setValue(cutoffHz / 1000.0f);
+
+    // Update filter type display from parameter
+    int filterType = static_cast<int>(apvts.getRawParameterValue("filter_type")->load());
+    // Map param value to UI: 0=LP->0, 1=HP->3, 2=BP->2, 3=Notch->?
+    int uiFilter = 0;
+    switch (filterType) {
+        case 0: uiFilter = 0; break; // LP -> LP12 button
+        case 1: uiFilter = 3; break; // HP -> HP button
+        case 2: uiFilter = 2; break; // BP -> BP button
+        case 3: uiFilter = 0; break; // Notch -> LP12 (fallback)
+    }
+    filterPanel.setFilterType(uiFilter);
+
+    // Update XY Pad from parameters
+    float spread = apvts.getRawParameterValue("unison_spread")->load();
+    float reverbMix = apvts.getRawParameterValue("reverb_mix")->load();
+    xyPad.setValues(spread, reverbMix);
 
     // Update envelope display
     float ampA = apvts.getRawParameterValue("amp_attack")->load();
@@ -293,6 +404,21 @@ void PluginEditor::timerCallback()
     float ampS = apvts.getRawParameterValue("amp_sustain")->load();
     float ampR = apvts.getRawParameterValue("amp_release")->load();
     ampEnvelopeDisplay.setADSR(ampA, ampD, ampS, ampR);
+
+    // Update envelope curves
+    float atkCurve = apvts.getRawParameterValue("amp_attack_curve")->load();
+    float decCurve = apvts.getRawParameterValue("amp_decay_curve")->load();
+    float relCurve = apvts.getRawParameterValue("amp_release_curve")->load();
+    ampEnvelopeDisplay.setCurves(atkCurve, decCurve, relCurve);
+
+    // Update envelope enable button state
+    bool envEnabled = apvts.getRawParameterValue("amp_env_enabled")->load() > 0.5f;
+    envelopePanel->setEnvelopeEnabled(envEnabled);
+
+    // Update engine start button state from flanger parameter
+    bool flangerEnabled = apvts.getRawParameterValue("flanger_enabled")->load() > 0.5f;
+    if (engineStartButton.getToggleState() != flangerEnabled)
+        engineStartButton.setToggleState(flangerEnabled, juce::dontSendNotification);
 }
 
 // Computer keyboard -> MIDI note mapping

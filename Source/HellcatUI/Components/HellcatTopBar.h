@@ -33,13 +33,17 @@ public:
         trackButton.setToggleState(true, juce::dontSendNotification);
         addAndMakeVisible(trackButton);
 
-        // Preset display label (shows current preset name)
-        presetLabel.setText("Select Preset", juce::dontSendNotification);
-        presetLabel.setJustificationType(juce::Justification::centred);
-        presetLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-        presetLabel.setColour(juce::Label::backgroundColourId, HellcatColors::panelDark);
-        presetLabel.setColour(juce::Label::outlineColourId, HellcatColors::panelLight);
-        addAndMakeVisible(presetLabel);
+        // Preset display button (shows current preset name, clickable to open browser)
+        presetButton.setButtonText("Select Preset");
+        presetButton.setColour(juce::TextButton::buttonColourId, HellcatColors::panelDark);
+        presetButton.setColour(juce::TextButton::buttonOnColourId, HellcatColors::panelDark);
+        presetButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        presetButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        presetButton.onClick = [this]() {
+            if (onPresetLabelClicked)
+                onPresetLabelClicked();
+        };
+        addAndMakeVisible(presetButton);
 
         // Browser button
         browserButton.setButtonText("...");
@@ -151,7 +155,7 @@ public:
         prevButton.setBounds(presetArea.removeFromLeft(30));
         browserButton.setBounds(presetArea.removeFromRight(30));
         nextButton.setBounds(presetArea.removeFromRight(30));
-        presetLabel.setBounds(presetArea);
+        presetButton.setBounds(presetArea);
     }
 
     void setPresets(const juce::StringArray& presetNames)
@@ -174,11 +178,12 @@ public:
 
     void setCurrentPresetName(const juce::String& name)
     {
-        presetLabel.setText(name, juce::dontSendNotification);
+        presetButton.setButtonText(name);
     }
 
     std::function<void(int id, const juce::String& name)> onPresetChange;
     std::function<void()> onBrowserButtonClicked;
+    std::function<void()> onPresetLabelClicked;
     std::function<void()> onPrevPreset;
     std::function<void()> onNextPreset;
 
@@ -317,7 +322,7 @@ private:
     juce::TextButton sportButton;
     juce::TextButton trackButton;
     juce::ComboBox presetCombo;
-    juce::Label presetLabel;
+    juce::TextButton presetButton;
     juce::TextButton browserButton;
     juce::TextButton prevButton;
     juce::TextButton nextButton;

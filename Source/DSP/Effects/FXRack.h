@@ -308,6 +308,122 @@ private:
 };
 
 /**
+ * Stereo Flanger - shorter delay than chorus with higher feedback for "jet" sound
+ */
+class FlangerEffect : public Effect
+{
+public:
+    void prepare(double sr, int blockSize) override
+    {
+        sampleRate = sr;
+        samplesPerBlock = blockSize;
+
+        // Flanger uses short delay lines (max ~20ms)
+        int maxDelaySamples = static_cast<int>(0.02 * sr) + 1;
+        delayLineL.resize(static_cast<size_t>(maxDelaySamples));
+        delayLineR.resize(static_cast<size_t>(maxDelaySamples));
+        maxDelay = maxDelaySamples;
+
+        reset();
+    }
+
+    void process(juce::AudioBuffer<float>& buffer) override
+    {
+        if (!enabled)
+            return;
+
+        float* left = buffer.getWritePointer(0);
+        float* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1) : left;
+
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+        {
+            // Update LFO
+            float lfoValue = std::sin(lfoPhase * 2.0f * juce::MathConstants<float>::pi);
+            lfoPhase += static_cast<float>(rate / sampleRate);
+            if (lfoPhase >= 1.0f)
+                lfoPhase -= 1.0f;
+
+            // Calculate modulated delay time (0.1ms to 10ms range)
+            float minDelayMs = 0.1f;
+            float maxDelayMs = 10.0f;
+            float centreDelayMs = (minDelayMs + maxDelayMs) * 0.5f;
+            float delayRangeMs = (maxDelayMs - minDelayMs) * 0.5f * depth;
+
+            float delayMs = centreDelayMs + lfoValue * delayRangeMs;
+            float delaySamples = static_cast<float>(delayMs * 0.001 * sampleRate);
+            delaySamples = juce::jlimit(1.0f, static_cast<float>(maxDelay - 1), delaySamples);
+
+            // Stereo spread - offset phase for right channel
+            float lfoValueR = std::sin((lfoPhase + stereoSpread) * 2.0f * juce::MathConstants<float>::pi);
+            float delayMsR = centreDelayMs + lfoValueR * delayRangeMs;
+            float delaySamplesR = static_cast<float>(delayMsR * 0.001 * sampleRate);
+            delaySamplesR = juce::jlimit(1.0f, static_cast<float>(maxDelay - 1), delaySamplesR);
+
+            // Read from delay lines with linear interpolation
+            float delayedL = readDelayInterp(delayLineL, delaySamples);
+            float delayedR = readDelayInterp(delayLineR, delaySamplesR);
+
+            // Write to delay lines with feedback
+            delayLineL[static_cast<size_t>(writePos)] = left[i] + delayedL * feedback;
+            delayLineR[static_cast<size_t>(writePos)] = right[i] + delayedR * feedback;
+
+            // Output mix
+            float dryL = left[i];
+            float dryR = right[i];
+            left[i] = dryL * (1.0f - mix) + (dryL + delayedL) * 0.5f * mix;
+            right[i] = dryR * (1.0f - mix) + (dryR + delayedR) * 0.5f * mix;
+
+            // Advance write position
+            ++writePos;
+            if (writePos >= maxDelay)
+                writePos = 0;
+        }
+    }
+
+    void reset() override
+    {
+        std::fill(delayLineL.begin(), delayLineL.end(), 0.0f);
+        std::fill(delayLineR.begin(), delayLineR.end(), 0.0f);
+        writePos = 0;
+        lfoPhase = 0.0f;
+    }
+
+    juce::String getName() const override { return "Flanger"; }
+
+    void setRate(float r) { rate = juce::jlimit(0.05f, 10.0f, r); }
+    void setDepth(float d) { depth = juce::jlimit(0.0f, 1.0f, d); }
+    void setFeedback(float fb) { feedback = juce::jlimit(-0.95f, 0.95f, fb); }
+    void setStereoSpread(float spread) { stereoSpread = juce::jlimit(0.0f, 0.5f, spread); }
+
+private:
+    float readDelayInterp(const std::vector<float>& line, float delaySamples) const
+    {
+        float readPos = static_cast<float>(writePos) - delaySamples;
+        if (readPos < 0.0f)
+            readPos += static_cast<float>(maxDelay);
+
+        int pos0 = static_cast<int>(readPos);
+        int pos1 = pos0 + 1;
+        if (pos1 >= maxDelay)
+            pos1 = 0;
+
+        float frac = readPos - static_cast<float>(pos0);
+        return line[static_cast<size_t>(pos0)] * (1.0f - frac) + line[static_cast<size_t>(pos1)] * frac;
+    }
+
+    std::vector<float> delayLineL;
+    std::vector<float> delayLineR;
+    int writePos = 0;
+    int maxDelay = 0;
+    float lfoPhase = 0.0f;
+
+    float rate = 0.5f;      // LFO rate in Hz
+    float depth = 0.7f;     // Modulation depth
+    float feedback = 0.5f;  // Feedback amount (-0.95 to 0.95)
+    float stereoSpread = 0.25f; // Phase offset for stereo
+};
+
+/**
  * Distortion / Saturation
  */
 class DistortionEffect : public Effect
@@ -548,6 +664,7 @@ public:
         effects.push_back(std::make_unique<EQEffect>());
         effects.push_back(std::make_unique<CompressorEffect>());
         effects.push_back(std::make_unique<ChorusEffect>());
+        effects.push_back(std::make_unique<FlangerEffect>());
         effects.push_back(std::make_unique<DelayEffect>());
         effects.push_back(std::make_unique<ReverbEffect>());
 

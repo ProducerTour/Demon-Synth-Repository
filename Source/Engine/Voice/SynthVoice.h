@@ -63,6 +63,9 @@ public:
         float ampDecay = 0.1f;
         float ampSustain = 0.7f;
         float ampRelease = 0.3f;
+        float ampAttackCurve = -3.0f;   // Negative = exponential, 0 = linear, positive = logarithmic
+        float ampDecayCurve = 3.0f;
+        float ampReleaseCurve = 3.0f;
 
         // Filter Envelope
         float filterAttack = 0.01f;
@@ -347,6 +350,9 @@ private:
         ampParams.decay = params.ampDecay;
         ampParams.sustain = params.ampSustain;
         ampParams.release = params.ampRelease;
+        ampParams.attackCurve = params.ampAttackCurve;
+        ampParams.decayCurve = params.ampDecayCurve;
+        ampParams.releaseCurve = params.ampReleaseCurve;
         ampEnv.setParameters(ampParams);
 
         DSP::ADSR::Parameters filterParams;
