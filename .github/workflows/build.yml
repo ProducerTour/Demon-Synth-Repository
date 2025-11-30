@@ -63,8 +63,8 @@ jobs:
       - name: Pull LFS files
         run: git lfs pull
 
-      - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Configure CMake (Universal Binary)
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 
       - name: Build Release
         run: cmake --build build --config Release
