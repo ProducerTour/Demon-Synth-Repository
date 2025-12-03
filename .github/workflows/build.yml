@@ -31,8 +31,16 @@ jobs:
       - name: Build Release
         run: cmake --build build --config Release
 
-      # Note: Windows installer skipped - requires samples
-      # Users download samples separately from release page
+      - name: Build Windows Installer
+        run: |
+          cd Installer/Windows
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' "DemonSynth.iss"
+
+      - name: Upload Windows Installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: DemonSynth-Windows-Installer
+          path: Installer/Output/DemonSynth_v*.exe
 
       - name: Upload Windows VST3
         uses: actions/upload-artifact@v4
