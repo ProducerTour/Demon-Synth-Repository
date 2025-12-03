@@ -91,6 +91,38 @@ cmake --build . --config Release
 - **macOS AU**: `build/NulyBeatsPlugin_artefacts/Release/AU/NulyBeats Synth.component`
 - **Windows**: `build\NulyBeatsPlugin_artefacts\Release\VST3\NulyBeats Synth.vst3`
 
+## Installing Sound Libraries
+
+The sound library samples are distributed separately from the plugin to reduce download size.
+
+### Windows
+1. **Download the installer** from the releases page
+2. During installation, you'll be prompted to select a location for sample presets
+3. Default location: `C:\Users\[YourUsername]\AppData\Roaming\NullyBeats\Demon Synth\Samples`
+4. **Extract the sample library** to the chosen directory
+5. Restart your DAW to access the samples
+
+### macOS
+1. **Download the plugin** and **sample library** from the releases page
+2. **Install the plugin**:
+   - VST3: Copy `Demon Synth.vst3` to `~/Library/Audio/Plug-Ins/VST3/`
+   - AU: Copy `Demon Synth.component` to `~/Library/Audio/Plug-Ins/Components/`
+3. **Extract the sample library** to: `~/Library/Application Support/NullyBeats/Demon Synth/Samples`
+4. Create the directory if it doesn't exist
+5. Restart your DAW to access the samples
+
+### Linux
+1. **Download the plugin** and **sample library** from the releases page
+2. **Install the plugin**: Copy the VST3 folder to `~/.vst3/`
+3. **Extract the sample library** to: `~/.local/share/NullyBeats/Demon Synth/Samples`
+4. Restart your DAW to access the samples
+
+### Troubleshooting
+- **Samples not loading?** Ensure the samples are extracted to the correct directory path
+- **Wrong path?** The plugin stores the samples path in:
+  - Windows: Registry at `HKEY_CURRENT_USER\Software\NullyBeats\Demon Synth\SamplesPath`
+  - macOS/Linux: Check the plugin's preferences
+
 ## Project Structure
 
 ```
