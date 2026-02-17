@@ -37,6 +37,7 @@ juce_add_binary_data(BinaryResources SOURCES
     "Resources/Fonts/Sofachrome Rg.otf"
     "Resources/Fonts/Sofachrome Rg It.otf"
     Resources/Graphics/square.png
+    Resources/Graphics/carbon_fiber.jpg
 )
 
 # Source files
@@ -82,6 +83,7 @@ target_sources(NulyBeatsPlugin
         Source/Modulation/ModMatrix.cpp
         Source/Modulation/ModSource.cpp
         Source/Modulation/ModDestination.cpp
+        Source/Modulation/MidiLearn.h
 
         # UI
         Source/UI/Components/OscillatorPanel.cpp
@@ -105,6 +107,9 @@ target_sources(NulyBeatsPlugin
         Source/HellcatUI/Components/HellcatModMatrix.h
         Source/HellcatUI/Components/HellcatLFOPanel.h
         Source/HellcatUI/Components/HellcatTabbedPanel.h
+        Source/HellcatUI/Components/HellcatPresetBrowser.h
+        Source/HellcatUI/Components/HellcatFXPanel.h
+        Source/HellcatUI/Components/HellcatOscilloscope.h
 
         # Utils
         Source/Utils/SIMDUtils.cpp

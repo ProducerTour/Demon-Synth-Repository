@@ -264,7 +264,7 @@ public:
             noiseSample = (random.nextFloat() * 2.0f - 1.0f) * params.noiseLevel;
         }
 
-        // Mix oscillators
+        // Mix oscillators and filter (mono)
         float mix = osc1Sample + osc2Sample + noiseSample;
 
         // Filter
@@ -280,8 +280,8 @@ public:
 
         mix = filter.process(mix);
 
-        // Apply amp envelope
-        mix *= ampEnvValue * velocity * params.masterLevel;
+        // Apply amp envelope and master level
+        float gain = ampEnvValue * velocity * params.masterLevel;
 
         // Check if voice is done
         if (!ampEnv.isActive())
@@ -292,12 +292,33 @@ public:
             return;
         }
 
-        // Pan oscillators (simple equal-power pan)
-        float panL = std::cos((params.osc1Pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
-        float panR = std::sin((params.osc1Pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
+        // Per-oscillator stereo panning (equal-power)
+        // Scale each osc's contribution from the filtered mix by its relative level
+        float osc1Contrib = (osc1Sample + noiseSample) * gain;
+        float osc2Contrib = osc2Sample * gain;
 
-        left = mix * panL;
-        right = mix * panR;
+        float pan1L = std::cos((params.osc1Pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
+        float pan1R = std::sin((params.osc1Pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
+        float pan2L = std::cos((params.osc2Pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
+        float pan2R = std::sin((params.osc2Pan + 1.0f) * juce::MathConstants<float>::pi * 0.25f);
+
+        // When both pans are center (0), this equals the original mono behavior
+        // When pans differ, oscillators spread in the stereo field
+        float totalAmp = std::abs(osc1Sample + noiseSample) + std::abs(osc2Sample);
+        if (totalAmp > 0.0001f)
+        {
+            float w1 = std::abs(osc1Sample + noiseSample) / totalAmp;
+            float w2 = std::abs(osc2Sample) / totalAmp;
+            float blendedPanL = pan1L * w1 + pan2L * w2;
+            float blendedPanR = pan1R * w1 + pan2R * w2;
+            left  = mix * gain * blendedPanL;
+            right = mix * gain * blendedPanR;
+        }
+        else
+        {
+            left  = mix * gain * pan1L;
+            right = mix * gain * pan1R;
+        }
     }
 
     void processBlock(float* left, float* right, int numSamples)
@@ -320,6 +341,15 @@ public:
 
     Parameters& getParameters() { return params; }
     Modulation::ModMatrix& getModMatrix() { return modMatrix; }
+
+    void setLFOParams(DSP::LFO::Waveform lfo1Wave, float lfo1Rate,
+                      DSP::LFO::Waveform lfo2Wave, float lfo2Rate)
+    {
+        lfo1.setWaveform(lfo1Wave);
+        lfo1.setRate(lfo1Rate);
+        lfo2.setWaveform(lfo2Wave);
+        lfo2.setRate(lfo2Rate);
+    }
 
     void reset()
     {

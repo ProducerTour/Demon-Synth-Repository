@@ -28,8 +28,15 @@ public:
         g.setColour(HellcatColors::panelLight);
         g.drawRoundedRectangle(padBounds.toFloat(), 8.0f, 1.0f);
         
+        // Hover highlight
+        if (isHovered || isDragging)
+        {
+            g.setColour(HellcatColors::hellcatRed.withAlpha(isDragging ? 0.08f : 0.04f));
+            g.fillRoundedRectangle(padBounds.toFloat(), 8.0f);
+        }
+
         // Crosshair
-        g.setColour(HellcatColors::hellcatRed.withAlpha(0.3f));
+        g.setColour(HellcatColors::hellcatRed.withAlpha(isHovered ? 0.5f : 0.3f));
         g.drawLine(padBounds.getX(), padBounds.getCentreY(), 
                    padBounds.getRight(), padBounds.getCentreY(), 1.0f);
         g.drawLine(padBounds.getCentreX(), padBounds.getY(), 
@@ -59,7 +66,10 @@ public:
         // Labels
         auto labelBounds = bounds;
         g.setColour(HellcatColors::textSecondary);
-        g.setFont(9.0f);
+        if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
+            g.setFont(lf->getOrbitronFont(9.0f));
+        else
+            g.setFont(juce::Font(9.0f, juce::Font::bold));
         g.drawText(xAxisLabel, labelBounds.removeFromLeft(labelBounds.getWidth() / 2), 
                    juce::Justification::centredLeft);
         g.drawText(yAxisLabel, labelBounds, juce::Justification::centredRight);
@@ -67,29 +77,57 @@ public:
     
     void mouseDown(const juce::MouseEvent& e) override
     {
+        isDragging = true;
+        setMouseCursor(juce::MouseCursor::CrosshairCursor);
         mouseDrag(e);
     }
-    
+
     void mouseDrag(const juce::MouseEvent& e) override
     {
         auto bounds = getLocalBounds().removeFromTop(getHeight() - 20);
-        
-        xValue = juce::jlimit(0.0f, 1.0f, 
+
+        xValue = juce::jlimit(0.0f, 1.0f,
                              (e.x - bounds.getX()) / (float)bounds.getWidth());
-        yValue = juce::jlimit(0.0f, 1.0f, 
+        yValue = juce::jlimit(0.0f, 1.0f,
                              (e.y - bounds.getY()) / (float)bounds.getHeight());
-        
+
         repaint();
-        
+
         if (onValueChange)
             onValueChange(xValue, yValue);
     }
-    
+
+    void mouseUp(const juce::MouseEvent&) override
+    {
+        isDragging = false;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        repaint();
+    }
+
+    void mouseEnter(const juce::MouseEvent&) override
+    {
+        isHovered = true;
+        setMouseCursor(juce::MouseCursor::CrosshairCursor);
+        repaint();
+    }
+
+    void mouseExit(const juce::MouseEvent&) override
+    {
+        isHovered = false;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        repaint();
+    }
+
     void setValues(float x, float y)
     {
-        xValue = juce::jlimit(0.0f, 1.0f, x);
-        yValue = juce::jlimit(0.0f, 1.0f, y);
-        repaint();
+        float newX = juce::jlimit(0.0f, 1.0f, x);
+        float newY = juce::jlimit(0.0f, 1.0f, y);
+        if (newX != xValue || newY != yValue)
+        {
+            xValue = newX;
+            yValue = newY;
+            repaint();
+        }
     }
     
     std::function<void(float, float)> onValueChange;
@@ -99,4 +137,6 @@ private:
     juce::String yAxisLabel;
     float xValue = 0.5f;
     float yValue = 0.5f;
+    bool isHovered = false;
+    bool isDragging = false;
 };

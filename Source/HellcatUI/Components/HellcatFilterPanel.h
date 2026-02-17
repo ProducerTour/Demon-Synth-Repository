@@ -72,6 +72,19 @@ public:
         lp24Button.onClick = [this]() { if (onFilterTypeChange) onFilterTypeChange(1); };
         bpButton.onClick = [this]() { if (onFilterTypeChange) onFilterTypeChange(2); };
         hpButton.onClick = [this]() { if (onFilterTypeChange) onFilterTypeChange(3); };
+
+        // Resonance knob
+        resoSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        resoSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        resoSlider.setRange(0.0, 1.0, 0.01);
+        resoSlider.setTooltip("Filter Resonance");
+        addAndMakeVisible(resoSlider);
+
+        resoLabel.setText("RES", juce::dontSendNotification);
+        resoLabel.setJustificationType(juce::Justification::centred);
+        resoLabel.setColour(juce::Label::textColourId, HellcatColors::textTertiary);
+        resoLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+        addAndMakeVisible(resoLabel);
     }
 
     void paint(juce::Graphics& g) override
@@ -126,13 +139,17 @@ public:
         clipPath.addRoundedRectangle(bounds, cornerSize);
         g.reduceClipRegion(clipPath);
 
-        // Subtle horizontal brushed metal lines
-        g.setColour(juce::Colour(0xff1a1a1a));
-        for (float y = bounds.getY(); y < bounds.getBottom(); y += 2.0f)
+        // Carbon fiber texture overlay
+        if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
         {
-            float alpha = 0.3f + 0.2f * std::sin(y * 0.5f);
-            g.setColour(juce::Colour(0xff1c1c1c).withAlpha(alpha));
-            g.drawHorizontalLine(static_cast<int>(y), bounds.getX(), bounds.getRight());
+            auto& img = lf->getCarbonFiberImage();
+            if (img.isValid())
+            {
+                g.setOpacity(0.45f);
+                g.drawImage(img, bounds,
+                           juce::RectanglePlacement::centred | juce::RectanglePlacement::fillDestination);
+                g.setOpacity(1.0f);
+            }
         }
 
         g.restoreState();
@@ -162,7 +179,13 @@ public:
         bounds.removeFromTop(35); // Title
 
         // Gauge area (includes dots)
-        gaugeBounds = bounds.removeFromTop(bounds.getHeight() - 90);
+        gaugeBounds = bounds.removeFromTop(bounds.getHeight() - 110);
+
+        // Resonance knob row
+        auto resoArea = bounds.removeFromTop(30);
+        resoArea = resoArea.reduced(static_cast<int>(bounds.getWidth() * 0.25f), 0);
+        resoLabel.setBounds(resoArea.removeFromLeft(24));
+        resoSlider.setBounds(resoArea);
 
         // Button area - 2x2 grid
         auto buttonArea = bounds.reduced(15, 5);
@@ -193,6 +216,65 @@ public:
     }
 
     std::function<void(int)> onFilterTypeChange;
+    std::function<void(float)> onGaugeValueChange;
+
+    juce::Slider& getResoSlider() { return resoSlider; }
+
+    void mouseDown(const juce::MouseEvent& e) override
+    {
+        if (gaugeBounds.contains(e.getPosition()))
+        {
+            isDraggingGauge = true;
+            dragStartY = e.y;
+            dragStartValue = currentValue;
+            setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+        }
+    }
+
+    void mouseDrag(const juce::MouseEvent& e) override
+    {
+        if (isDraggingGauge)
+        {
+            // Map vertical drag to kHz range
+            float delta = (dragStartY - e.y) / 8.0f; // 8px per kHz
+            float newValue = juce::jlimit(0.02f, maxValue, dragStartValue + delta);
+            if (std::abs(newValue - currentValue) > 0.01f)
+            {
+                currentValue = newValue;
+                repaint();
+                if (onGaugeValueChange)
+                    onGaugeValueChange(currentValue * 1000.0f); // Convert kHz back to Hz
+            }
+        }
+    }
+
+    void mouseUp(const juce::MouseEvent&) override
+    {
+        isDraggingGauge = false;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+    }
+
+    void mouseMove(const juce::MouseEvent& e) override
+    {
+        bool overGauge = gaugeBounds.contains(e.getPosition());
+        if (overGauge != gaugeHovered)
+        {
+            gaugeHovered = overGauge;
+            setMouseCursor(overGauge ? juce::MouseCursor::UpDownResizeCursor
+                                     : juce::MouseCursor::NormalCursor);
+            repaint();
+        }
+    }
+
+    void mouseExit(const juce::MouseEvent&) override
+    {
+        if (gaugeHovered)
+        {
+            gaugeHovered = false;
+            setMouseCursor(juce::MouseCursor::NormalCursor);
+            repaint();
+        }
+    }
 
 private:
     void drawGauge(juce::Graphics& g)
@@ -202,11 +284,12 @@ private:
         auto radius = juce::jmin(gaugeBounds.getWidth(), gaugeBounds.getHeight()) * 0.38f;
 
         // === Outer chrome bezel with multiple rings (like Hellcat speedometer) ===
-        // Outer glow ring (intensity based on value)
+        // Outer glow ring (intensity based on value, brighter on hover)
         float glowIntensity = currentValue / maxValue;
-        g.setColour(HellcatColors::hellcatRed.withAlpha(0.15f + glowIntensity * 0.2f));
+        float hoverBoost = gaugeHovered ? 0.15f : 0.0f;
+        g.setColour(HellcatColors::hellcatRed.withAlpha(0.15f + glowIntensity * 0.2f + hoverBoost));
         g.drawEllipse(centerX - radius - 12, centerY - radius - 12,
-                     (radius + 12) * 2, (radius + 12) * 2, 8.0f);
+                     (radius + 12) * 2, (radius + 12) * 2, gaugeHovered ? 10.0f : 8.0f);
 
         // Chrome bezel - outer ring
         juce::ColourGradient bezelGradient(
@@ -256,8 +339,9 @@ private:
         else
             g.setFont(juce::Font(42.0f, juce::Font::bold));
 
-        // Show value with 1 decimal - center properly within the inner circle
-        juce::String valueText = juce::String(currentValue, 1);
+        // Show value with appropriate precision — more decimals at low values
+        juce::String valueText = currentValue < 1.0f ? juce::String(currentValue, 2)
+                                                      : juce::String(currentValue, 1);
         auto textBounds = juce::Rectangle<float>(
             centerX - innerRadius, centerY - 24,
             innerRadius * 2.0f, 48
@@ -291,15 +375,24 @@ private:
         g.setColour(juce::Colour(0xff0c0c0c));
         g.fillEllipse(centerX - radius, centerY - radius, radius * 2, radius * 2);
 
-        // Carbon fiber pattern (simplified diagonal grid)
-        g.setColour(juce::Colour(0xff151515));
-        float step = 4.0f;
-        for (float offset = -radius; offset < radius; offset += step)
+        // Draw carbon fiber texture image
+        if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
         {
-            g.drawLine(centerX - radius + offset, centerY - radius,
-                      centerX + offset, centerY + radius, 0.5f);
-            g.drawLine(centerX + offset, centerY - radius,
-                      centerX - radius + offset, centerY + radius, 0.5f);
+            auto& img = lf->getCarbonFiberImage();
+            if (img.isValid())
+            {
+                g.saveState();
+                juce::Path clipCircle;
+                clipCircle.addEllipse(centerX - radius, centerY - radius, radius * 2, radius * 2);
+                g.reduceClipRegion(clipCircle);
+
+                auto destBounds = juce::Rectangle<float>(
+                    centerX - radius, centerY - radius, radius * 2, radius * 2);
+                g.drawImage(img, destBounds,
+                           juce::RectanglePlacement::centred | juce::RectanglePlacement::fillDestination);
+
+                g.restoreState();
+            }
         }
     }
 
@@ -442,7 +535,16 @@ private:
     HellcatFilterButton bpButton{"BP"};
     HellcatFilterButton hpButton{"HP"};
 
+    juce::Slider resoSlider;
+    juce::Label resoLabel;
+
     juce::Rectangle<int> gaugeBounds;
     float currentValue = 7.2f;
     float maxValue = 20.0f;
+
+    // Drag state for interactive gauge
+    bool isDraggingGauge = false;
+    bool gaugeHovered = false;
+    float dragStartY = 0.0f;
+    float dragStartValue = 0.0f;
 };

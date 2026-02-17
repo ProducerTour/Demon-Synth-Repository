@@ -39,7 +39,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
 
     // ===== Oscillator 1 =====
     params.push_back(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID{"osc1_enabled", 1}, "Osc 1 Enabled", true));
+        juce::ParameterID{"osc1_enabled", 1}, "Osc 1 Enabled", false));
 
     params.push_back(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID{"osc1_wave", 1}, "Osc 1 Wave",
@@ -227,6 +227,20 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createParam
         juce::ParameterID{"master_level", 1}, "Master Level",
         juce::NormalisableRange<float>(0.0f, 1.0f), 0.7f));
 
+    // Velocity curve: < 1.0 = soft response, 1.0 = linear, > 1.0 = hard response
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID{"velocity_curve", 1}, "Velocity Curve",
+        juce::NormalisableRange<float>(0.1f, 4.0f, 0.01f), 1.0f));
+
+    // Pitch bend range in semitones
+    params.push_back(std::make_unique<juce::AudioParameterInt>(
+        juce::ParameterID{"pitch_bend_range", 1}, "Pitch Bend Range", 1, 48, 2));
+
+    // Voice mode: Poly, Mono, Legato
+    params.push_back(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID{"voice_mode", 1}, "Voice Mode",
+        juce::StringArray{"Poly", "Mono", "Legato"}, 0));
+
     // ===== FX =====
     // Reverb
     params.push_back(std::make_unique<juce::AudioParameterBool>(
@@ -320,6 +334,9 @@ void PluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     smoothedDelayMix.reset(sampleRate, smoothingTime);
     smoothedChorusMix.reset(sampleRate, smoothingTime);
     smoothedFlangerMix.reset(sampleRate, smoothingTime);
+
+    // Pre-allocate scope mono mix buffer (avoids heap alloc in processBlock)
+    scopeMonoBuffer.resize(static_cast<size_t>(samplesPerBlock));
 }
 
 void PluginProcessor::releaseResources()
@@ -427,16 +444,43 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     voiceManager.setVoiceParameters(voiceParams);
 
+    // LFO parameters — forward to per-voice LFOs
+    auto lfo1Wave = static_cast<DSP::LFO::Waveform>(
+        static_cast<int>(apvts.getRawParameterValue("lfo1_wave")->load()));
+    float lfo1Rate = apvts.getRawParameterValue("lfo1_rate")->load();
+    auto lfo2Wave = static_cast<DSP::LFO::Waveform>(
+        static_cast<int>(apvts.getRawParameterValue("lfo2_wave")->load()));
+    float lfo2Rate = apvts.getRawParameterValue("lfo2_rate")->load();
+    voiceManager.setLFOParams(lfo1Wave, lfo1Rate, lfo2Wave, lfo2Rate);
+
     // Unison
     int unisonVoices = static_cast<int>(apvts.getRawParameterValue("unison_voices")->load());
     float unisonDetune = apvts.getRawParameterValue("unison_detune")->load();
     float unisonSpread = apvts.getRawParameterValue("unison_spread")->load();
     voiceManager.setUnison(unisonVoices, unisonDetune, unisonSpread);
 
-    // Process MIDI for synth voices
+    // Voice mode
+    int voiceModeVal = static_cast<int>(apvts.getRawParameterValue("voice_mode")->load());
+    voiceManager.setVoiceMode(static_cast<Engine::VoiceManager::VoiceMode>(voiceModeVal));
+
+    // Velocity curve and pitch bend range
+    float velocityCurve = apvts.getRawParameterValue("velocity_curve")->load();
+    voiceManager.setVelocityCurve(velocityCurve);
+    sampleSynth.setVelocityCurve(velocityCurve);
+
+    int pitchBendRange = static_cast<int>(apvts.getRawParameterValue("pitch_bend_range")->load());
+    sampleSynth.setPitchBendRange(pitchBendRange);
+
+    // Process MIDI — handle MIDI learn CC mappings before voice processing
     for (const auto metadata : midiMessages)
     {
-        voiceManager.handleMidiMessage(metadata.getMessage());
+        const auto& msg = metadata.getMessage();
+        if (msg.isController())
+        {
+            midiLearn.processMidiCC(msg.getControllerNumber(),
+                                    msg.getControllerValue() / 127.0f, apvts);
+        }
+        voiceManager.handleMidiMessage(msg);
     }
 
     // Clear buffer once at the start
@@ -456,6 +500,9 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     // Process sample synth - uses JUCE's Synthesiser which reads MIDI directly
     sampleSynth.processBlock(buffer, midiMessages);
+
+    // Process VA synth voices — mix into existing sample synth output
+    voiceManager.processBlock(buffer, false);
 
     // Master FX enable - controlled by Engine Start button (flanger_enabled parameter)
     bool engineStarted = apvts.getRawParameterValue("flanger_enabled")->load() > 0.5f;
@@ -585,6 +632,33 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     // Process FX (will be bypassed if all effects are disabled)
     fxRack.process(buffer);
+
+    // Compute RMS level for metering (max of L/R channels)
+    {
+        const int numSamples = buffer.getNumSamples();
+        float rmsL = buffer.getRMSLevel(0, 0, numSamples);
+        float rmsR = buffer.getNumChannels() > 1 ? buffer.getRMSLevel(1, 0, numSamples) : rmsL;
+        currentRmsLevel.store(std::max(rmsL, rmsR), std::memory_order_relaxed);
+
+        // Push mono mix to oscilloscope buffer
+        if (numSamples > 0)
+        {
+            const float* left = buffer.getReadPointer(0);
+            if (buffer.getNumChannels() > 1)
+            {
+                // Mix to mono for scope display (use pre-allocated buffer)
+                const float* right = buffer.getReadPointer(1);
+                scopeMonoBuffer.resize(static_cast<size_t>(numSamples)); // no-op if same size
+                for (int i = 0; i < numSamples; ++i)
+                    scopeMonoBuffer[static_cast<size_t>(i)] = (left[i] + right[i]) * 0.5f;
+                pushScopeData(scopeMonoBuffer.data(), numSamples);
+            }
+            else
+            {
+                pushScopeData(left, numSamples);
+            }
+        }
+    }
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()
@@ -620,6 +694,9 @@ void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
     }
 
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
+
+    // Save MIDI learn mappings
+    midiLearn.saveToXml(*xml);
 
     DBG("  XML output: " + xml->toString().substring(0, 500));
 
@@ -657,6 +734,9 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
             {
                 DBG("  No preset name in state - skipping load");
             }
+
+            // Restore MIDI learn mappings
+            midiLearn.loadFromXml(*xml);
 
             apvts.replaceState(newState);
             stateHasBeenRestored = true;
@@ -698,10 +778,6 @@ void PluginProcessor::loadSamplePreset(const juce::String& presetName)
     DBG("  Preset name: " + presetName);
     DBG("  Current preset before: " + (currentSamplePresetName.isEmpty() ? "(empty)" : currentSamplePresetName));
 
-    // Write to a log file for debugging
-    juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("DemonSynth_debug.log");
-    logFile.appendText("loadSamplePreset: " + presetName + " at " + juce::Time::getCurrentTime().toString(true, true) + "\n");
-
     const auto* preset = samplePresetManager.findPreset(presetName);
     if (preset != nullptr)
     {
@@ -711,17 +787,11 @@ void PluginProcessor::loadSamplePreset(const juce::String& presetName)
         {
             // Load multisampled preset with all zones
             DBG("  Found multisampled preset with " + juce::String(preset->zones.size()) + " zones");
-            logFile.appendText("  Multisampled preset with " + juce::String(preset->zones.size()) + " zones\n");
 
             // Build the zones vector for SampleSynth
             std::vector<std::tuple<juce::File, int, int, int>> zones;
             for (const auto& zone : preset->zones)
-            {
                 zones.push_back({zone.sampleFile, zone.rootNote, zone.lowKey, zone.highKey});
-                logFile.appendText("    Zone: root=" + juce::String(zone.rootNote) +
-                    " range=" + juce::String(zone.lowKey) + "-" + juce::String(zone.highKey) +
-                    " file=" + zone.sampleFile.getFileName() + "\n");
-            }
 
             success = sampleSynth.loadMultisampledPreset(zones);
         }
@@ -729,34 +799,20 @@ void PluginProcessor::loadSamplePreset(const juce::String& presetName)
         {
             // Load single sample preset (backwards compatibility)
             DBG("  Found preset, loading file: " + preset->sampleFile.getFullPathName());
-            logFile.appendText("  Found preset, file: " + preset->sampleFile.getFullPathName() + "\n");
-
             success = sampleSynth.loadSample(preset->sampleFile);
         }
 
         DBG("  Sample load " + juce::String(success ? "SUCCESS" : "FAILED"));
-        logFile.appendText("  Sample load: " + juce::String(success ? "SUCCESS" : "FAILED") + "\n");
 
-        // Store preset name for state persistence
         if (success)
         {
             currentSamplePresetName = presetName;
             DBG("  Set currentSamplePresetName to: " + currentSamplePresetName);
-            logFile.appendText("  Set currentSamplePresetName to: " + currentSamplePresetName + "\n");
         }
     }
     else
     {
         DBG("  Preset NOT found: " + presetName);
-        logFile.appendText("  Preset NOT found: " + presetName + "\n");
-
-        // Log available presets for debugging
-        logFile.appendText("  Available categories: " + juce::String(samplePresetManager.getCategories().size()) + "\n");
-        for (const auto& cat : samplePresetManager.getCategories())
-        {
-            auto presets = samplePresetManager.getPresetsInCategory(cat);
-            logFile.appendText("    " + cat + ": " + juce::String(presets.size()) + " presets\n");
-        }
     }
 }
 
@@ -833,9 +889,6 @@ juce::File PluginProcessor::getSamplesDirectory()
     searchPaths.push_back(juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
         .getChildFile("NullyBeats/Demon Synth/Samples"));
 #endif
-
-    // Development path
-    searchPaths.push_back(juce::File("/Users/nolangriffis/Documents/NullyBeatsPlugin/Resources/Samples"));
 
     // Relative to executable (for standalone app)
     searchPaths.push_back(juce::File::getSpecialLocation(juce::File::currentExecutableFile)

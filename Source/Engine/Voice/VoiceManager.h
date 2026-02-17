@@ -75,8 +75,22 @@ public:
         voiceMode = mode;
     }
 
+    void setVelocityCurve(float curve)
+    {
+        velocityCurve = curve;
+    }
+
+    void setLFOParams(DSP::LFO::Waveform lfo1Wave, float lfo1Rate,
+                      DSP::LFO::Waveform lfo2Wave, float lfo2Rate)
+    {
+        for (auto& voice : voices)
+            voice.setLFOParams(lfo1Wave, lfo1Rate, lfo2Wave, lfo2Rate);
+    }
+
     void noteOn(int midiNote, float velocity)
     {
+        // Apply velocity curve: < 1.0 = soft response, > 1.0 = hard response
+        velocity = std::pow(velocity, velocityCurve);
         // Handle mono/legato modes
         if (voiceMode == VoiceMode::Mono || voiceMode == VoiceMode::Legato)
         {
@@ -177,6 +191,13 @@ public:
     {
         activeNotes[midiNote] = false;
 
+        // If sustain pedal is down, defer the note-off
+        if (sustainPedalDown)
+        {
+            sustainedNotes[midiNote] = true;
+            return;
+        }
+
         // Handle mono/legato note stack
         if (voiceMode == VoiceMode::Mono || voiceMode == VoiceMode::Legato)
         {
@@ -269,6 +290,8 @@ public:
         }
 
         activeNotes.fill(false);
+        sustainedNotes.fill(false);
+        sustainPedalDown = false;
         monoNoteStack.clear();
     }
 
@@ -338,6 +361,38 @@ public:
                         Modulation::ModSource::ModWheel, value);
                 }
             }
+            else if (cc == 64) // Sustain pedal
+            {
+                sustainPedalDown = (msg.getControllerValue() >= 64);
+
+                if (!sustainPedalDown)
+                {
+                    // Pedal released — release all sustained notes
+                    for (int note = 0; note < 128; ++note)
+                    {
+                        if (sustainedNotes[note])
+                        {
+                            sustainedNotes[note] = false;
+                            // Only release if the key isn't still physically held
+                            if (!activeNotes[note])
+                            {
+                                if (voiceMode == VoiceMode::Mono || voiceMode == VoiceMode::Legato)
+                                {
+                                    handleMonoNoteOff(note);
+                                }
+                                else
+                                {
+                                    for (auto& voice : voices)
+                                    {
+                                        if (voice.isVoiceActive() && voice.getMidiNote() == note)
+                                            voice.noteOff();
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         else if (msg.isAftertouch())
         {
@@ -366,6 +421,8 @@ public:
         for (auto& voice : voices)
             voice.reset();
         activeNotes.fill(false);
+        sustainedNotes.fill(false);
+        sustainPedalDown = false;
         monoNoteStack.clear();
     }
 
@@ -468,6 +525,13 @@ private:
     std::vector<int> monoNoteStack;  // For mono/legato note priority
 
     std::array<bool, 128> activeNotes{};
+
+    // Sustain pedal state
+    bool sustainPedalDown = false;
+    std::array<bool, 128> sustainedNotes{};
+
+    // Velocity curve: 1.0 = linear, < 1.0 = soft, > 1.0 = hard
+    float velocityCurve = 1.0f;
 };
 
 } // namespace Engine

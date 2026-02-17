@@ -85,26 +85,37 @@ class HellcatTabbedPanel : public juce::Component
 public:
     HellcatTabbedPanel()
     {
-        // Create custom tab buttons with proper styling
-        tabButtons.add(new HellcatTabButton("MOD MATRIX"));
-        tabButtons.add(new HellcatTabButton("ENVELOPES"));
-        tabButtons.add(new HellcatTabButton("LFOs"));
-
-        for (int i = 0; i < tabButtons.size(); ++i)
-        {
-            tabButtons[i]->onClick = [this, i]() { setCurrentTab(i); };
-            addAndMakeVisible(tabButtons[i]);
-        }
+        // Create default tabs
+        addTab("MOD MATRIX");
+        addTab("ENVELOPES");
+        addTab("LFOs");
+        addTab("FX");
 
         // Set ENVELOPES as default
         tabButtons[1]->setActive(true);
     }
 
+    void addTab(const juce::String& name, juce::Component* content = nullptr)
+    {
+        auto* btn = new HellcatTabButton(name);
+        int idx = tabButtons.size();
+        btn->onClick = [this, idx]() { setCurrentTab(idx); };
+        addAndMakeVisible(btn);
+        tabButtons.add(btn);
+        tabContents.push_back(content);
+
+        if (content != nullptr)
+        {
+            addAndMakeVisible(content);
+            content->setVisible(idx == currentTabIndex);
+        }
+    }
+
     void setTabContent(int index, juce::Component* content)
     {
-        if (index >= 0 && index < 3 && content != nullptr)
+        if (index >= 0 && index < static_cast<int>(tabContents.size()) && content != nullptr)
         {
-            tabContents[index] = content;
+            tabContents[static_cast<size_t>(index)] = content;
             addAndMakeVisible(content);
             content->setVisible(index == currentTabIndex);
         }
@@ -112,7 +123,7 @@ public:
 
     void setCurrentTab(int index)
     {
-        if (index < 0 || index >= 3) return;
+        if (index < 0 || index >= static_cast<int>(tabContents.size())) return;
 
         currentTabIndex = index;
 
@@ -121,10 +132,10 @@ public:
             tabButtons[i]->setActive(i == index);
 
         // Show only current tab content
-        for (int i = 0; i < 3; ++i)
+        for (int i = 0; i < static_cast<int>(tabContents.size()); ++i)
         {
-            if (tabContents[i] != nullptr)
-                tabContents[i]->setVisible(i == index);
+            if (tabContents[static_cast<size_t>(i)] != nullptr)
+                tabContents[static_cast<size_t>(i)]->setVisible(i == index);
         }
 
         repaint();
@@ -155,8 +166,9 @@ public:
         auto tabBar = bounds.removeFromTop(tabBarHeight);
 
         // Distribute tabs evenly
-        int tabWidth = tabBar.getWidth() / 3;
-        for (int i = 0; i < tabButtons.size(); ++i)
+        int numTabs = tabButtons.size();
+        int tabWidth = numTabs > 0 ? tabBar.getWidth() / numTabs : tabBar.getWidth();
+        for (int i = 0; i < numTabs; ++i)
         {
             tabButtons[i]->setBounds(tabBar.removeFromLeft(tabWidth));
         }
@@ -180,5 +192,5 @@ private:
     int currentTabIndex = 1; // ENVELOPES by default
 
     juce::OwnedArray<HellcatTabButton> tabButtons;
-    juce::Component* tabContents[3] = { nullptr, nullptr, nullptr };
+    std::vector<juce::Component*> tabContents;
 };

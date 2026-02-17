@@ -4,7 +4,8 @@
 #include <cmath>
 
 class HellcatEnvelopeDisplay : public juce::Component,
-                               private juce::Timer
+                               private juce::Timer,
+                               private juce::Label::Listener
 {
 public:
     enum class DragPoint { None, Attack, Decay, Sustain, Release };
@@ -13,6 +14,23 @@ public:
     {
         // One-shot timer to force repaint after component is laid out
         startTimer(100);
+
+        // Editable value labels
+        auto setupValueLabel = [this](juce::Label& label) {
+            label.setJustificationType(juce::Justification::centred);
+            label.setColour(juce::Label::textColourId, HellcatColors::textPrimary);
+            label.setColour(juce::Label::textWhenEditingColourId, HellcatColors::textPrimary);
+            label.setColour(juce::Label::backgroundWhenEditingColourId, HellcatColors::panelDark);
+            label.setColour(juce::Label::outlineWhenEditingColourId, HellcatColors::hellcatRed);
+            label.setEditable(true, true, false);
+            label.addListener(this);
+            addAndMakeVisible(label);
+        };
+        setupValueLabel(attackValueLabel);
+        setupValueLabel(decayValueLabel);
+        setupValueLabel(sustainValueLabel);
+        setupValueLabel(releaseValueLabel);
+        updateValueLabels();
     }
 
     ~HellcatEnvelopeDisplay() override
@@ -81,11 +99,15 @@ public:
         g.strokePath(envPath, juce::PathStrokeType(6.0f, juce::PathStrokeType::curved,
                                                     juce::PathStrokeType::rounded));
 
-        // Draw touchpoints
-        drawTouchpoint(g, attackPoint, currentDragPoint == DragPoint::Attack || hoveredPoint == DragPoint::Attack);
-        drawTouchpoint(g, decayPoint, currentDragPoint == DragPoint::Decay || hoveredPoint == DragPoint::Decay);
-        drawTouchpoint(g, sustainPoint, currentDragPoint == DragPoint::Sustain || hoveredPoint == DragPoint::Sustain);
-        drawTouchpoint(g, releasePoint, currentDragPoint == DragPoint::Release || hoveredPoint == DragPoint::Release);
+        // Draw touchpoints with labels
+        drawTouchpoint(g, attackPoint, currentDragPoint == DragPoint::Attack || hoveredPoint == DragPoint::Attack, "A");
+        drawTouchpoint(g, decayPoint, currentDragPoint == DragPoint::Decay || hoveredPoint == DragPoint::Decay, "D");
+        drawTouchpoint(g, sustainPoint, currentDragPoint == DragPoint::Sustain || hoveredPoint == DragPoint::Sustain, "S");
+        drawTouchpoint(g, releasePoint, currentDragPoint == DragPoint::Release || hoveredPoint == DragPoint::Release, "R");
+
+        // Draw drag value tooltip
+        if (currentDragPoint != DragPoint::None)
+            drawDragTooltip(g);
 
         // Draw ADSR values at bottom
         drawADSRValues(g, valueBounds);
@@ -93,13 +115,14 @@ public:
 
     void setADSR(float attack, float decay, float sustain, float release)
     {
-        // Only update if not currently dragging (to avoid fighting with user input)
-        if (currentDragPoint == DragPoint::None)
+        // Only update if not currently dragging or editing (to avoid fighting with user input)
+        if (currentDragPoint == DragPoint::None && !isEditingLabel)
         {
             attackTime = attack;
             decayTime = decay;
             sustainLevel = sustain;
             releaseTime = release;
+            updateValueLabels();
             repaint();
         }
     }
@@ -136,7 +159,10 @@ public:
     {
         currentDragPoint = getPointAt(e.getPosition().toFloat());
         if (currentDragPoint != DragPoint::None)
+        {
+            updateCursorForPoint(currentDragPoint);
             repaint();
+        }
     }
 
     void mouseDrag(const juce::MouseEvent& e) override
@@ -217,6 +243,7 @@ public:
     void mouseUp(const juce::MouseEvent&) override
     {
         currentDragPoint = DragPoint::None;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
         repaint();
     }
 
@@ -226,6 +253,7 @@ public:
         if (newHovered != hoveredPoint)
         {
             hoveredPoint = newHovered;
+            updateCursorForPoint(hoveredPoint);
             repaint();
         }
     }
@@ -235,6 +263,7 @@ public:
         if (hoveredPoint != DragPoint::None)
         {
             hoveredPoint = DragPoint::None;
+            setMouseCursor(juce::MouseCursor::NormalCursor);
             repaint();
         }
     }
@@ -344,7 +373,7 @@ private:
         releasePoint = { pathBounds.getRight(), pathBounds.getBottom() };
     }
 
-    void drawTouchpoint(juce::Graphics& g, juce::Point<float> point, bool highlighted)
+    void drawTouchpoint(juce::Graphics& g, juce::Point<float> point, bool highlighted, const juce::String& label)
     {
         float size = highlighted ? 14.0f : 10.0f;
 
@@ -362,6 +391,73 @@ private:
         // Inner highlight
         g.setColour(juce::Colours::white.withAlpha(0.6f));
         g.fillEllipse(point.x - size / 4, point.y - size / 4, size / 2, size / 2);
+
+        // Point label
+        g.setColour(highlighted ? HellcatColors::textPrimary : HellcatColors::textSecondary);
+        if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
+            g.setFont(lf->getOrbitronFont(9.0f));
+        else
+            g.setFont(juce::Font(9.0f, juce::Font::bold));
+
+        // Position label above the point, clamped within graph bounds
+        float labelY = point.y - size - 12.0f;
+        if (labelY < pathBounds.getY())
+            labelY = point.y + size + 2.0f; // Below if too close to top
+        g.drawText(label, juce::Rectangle<float>(point.x - 8, labelY, 16, 12).toNearestInt(),
+                   juce::Justification::centred);
+    }
+
+    void drawDragTooltip(juce::Graphics& g)
+    {
+        juce::String text;
+        juce::Point<float> pos;
+
+        switch (currentDragPoint)
+        {
+            case DragPoint::Attack:
+                text = juce::String(juce::roundToInt(attackTime * 1000)) + "ms";
+                pos = attackPoint;
+                break;
+            case DragPoint::Decay:
+                text = juce::String(juce::roundToInt(decayTime * 1000)) + "ms";
+                pos = decayPoint;
+                break;
+            case DragPoint::Sustain:
+                text = juce::String(juce::roundToInt(sustainLevel * 100)) + "%";
+                pos = sustainPoint;
+                break;
+            case DragPoint::Release:
+                text = juce::String(juce::roundToInt(releaseTime * 1000)) + "ms";
+                pos = releasePoint;
+                break;
+            default: return;
+        }
+
+        if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
+            g.setFont(lf->getOrbitronFont(10.0f));
+        else
+            g.setFont(juce::Font(10.0f, juce::Font::bold));
+
+        float textWidth = g.getCurrentFont().getStringWidthFloat(text) + 12.0f;
+        float tooltipX = pos.x - textWidth / 2.0f;
+        float tooltipY = pos.y - 32.0f;
+
+        // Clamp within bounds
+        tooltipX = juce::jlimit(pathBounds.getX(), pathBounds.getRight() - textWidth, tooltipX);
+        if (tooltipY < pathBounds.getY())
+            tooltipY = pos.y + 18.0f;
+
+        auto tooltipBounds = juce::Rectangle<float>(tooltipX, tooltipY, textWidth, 18.0f);
+
+        // Background
+        g.setColour(HellcatColors::panelDark);
+        g.fillRoundedRectangle(tooltipBounds, 4.0f);
+        g.setColour(HellcatColors::hellcatRed.withAlpha(0.6f));
+        g.drawRoundedRectangle(tooltipBounds, 4.0f, 1.0f);
+
+        // Text
+        g.setColour(HellcatColors::textPrimary);
+        g.drawText(text, tooltipBounds.toNearestInt(), juce::Justification::centred);
     }
 
     DragPoint getPointAt(juce::Point<float> pos) const
@@ -371,8 +467,8 @@ private:
         if (attackPoint.getDistanceFrom(pos) < hitRadius) return DragPoint::Attack;
         if (decayPoint.getDistanceFrom(pos) < hitRadius) return DragPoint::Decay;
         if (sustainPoint.getDistanceFrom(pos) < hitRadius) return DragPoint::Sustain;
-        // Release point is at the far right, check a larger Y area
-        if (std::abs(releasePoint.x - pos.x) < hitRadius * 2 && pos.y > pathBounds.getCentreY())
+        // Release point is at bottom-right corner — use larger radius since it's at the edge
+        if (releasePoint.getDistanceFrom(pos) < hitRadius * 1.5f)
             return DragPoint::Release;
 
         return DragPoint::None;
@@ -401,41 +497,126 @@ private:
         int colWidth = bounds.getWidth() / 4;
 
         const juce::String labels[] = {"ATTACK", "DECAY", "SUSTAIN", "RELEASE"};
-        const juce::String values[] = {
-            juce::String(static_cast<int>(attackTime * 1000)) + "ms",
-            juce::String(static_cast<int>(decayTime * 1000)) + "ms",
-            juce::String(static_cast<int>(sustainLevel * 100)) + "%",
-            juce::String(static_cast<int>(releaseTime * 1000)) + "ms"
-        };
+        juce::Label* valueLabelPtrs[] = { &attackValueLabel, &decayValueLabel, &sustainValueLabel, &releaseValueLabel };
+
+        // Set font on labels during paint (when LookAndFeel is available)
+        if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
+        {
+            auto font = lf->getOrbitronBlackFont(16.0f);
+            for (auto* vl : valueLabelPtrs)
+                vl->setFont(font);
+        }
+        else
+        {
+            for (auto* vl : valueLabelPtrs)
+                vl->setFont(juce::Font(16.0f, juce::Font::bold));
+        }
 
         for (int i = 0; i < 4; ++i)
         {
             auto col = bounds.removeFromLeft(colWidth);
 
-            // Label - use Orbitron for dashboard consistency
+            // Header label text
             g.setColour(HellcatColors::textTertiary);
             if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
                 g.setFont(lf->getOrbitronFont(9.0f));
             else
-                g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 9.0f, juce::Font::bold));
+                g.setFont(juce::Font(9.0f, juce::Font::bold));
             g.drawText(labels[i], col.removeFromTop(15), juce::Justification::centred);
 
-            // Value - use Orbitron Black for large values
-            g.setColour(HellcatColors::textPrimary);
-            if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
-                g.setFont(lf->getOrbitronBlackFont(16.0f));
-            else
-                g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 16.0f, juce::Font::bold));
+            // Position the editable value label
             auto valueArea = col.removeFromTop(25);
-            g.drawText(values[i], valueArea, juce::Justification::centred);
+            valueLabelPtrs[i]->setBounds(valueArea);
 
-            // Red underline
+            // Red underline below the value label
             g.setColour(HellcatColors::hellcatRed);
             auto underlineBounds = valueArea.reduced(10, 0);
             g.fillRect(underlineBounds.getX(), underlineBounds.getBottom() + 2,
                       underlineBounds.getWidth(), 3);
         }
     }
+
+    void updateCursorForPoint(DragPoint point)
+    {
+        switch (point)
+        {
+            case DragPoint::Sustain:
+                setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
+                break;
+            case DragPoint::Attack:
+            case DragPoint::Decay:
+            case DragPoint::Release:
+                setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+                break;
+            default:
+                setMouseCursor(juce::MouseCursor::NormalCursor);
+                break;
+        }
+    }
+
+    void updateValueLabels()
+    {
+        attackValueLabel.setText(juce::String(juce::roundToInt(attackTime * 1000)) + "ms", juce::dontSendNotification);
+        decayValueLabel.setText(juce::String(juce::roundToInt(decayTime * 1000)) + "ms", juce::dontSendNotification);
+        sustainValueLabel.setText(juce::String(juce::roundToInt(sustainLevel * 100)) + "%", juce::dontSendNotification);
+        releaseValueLabel.setText(juce::String(juce::roundToInt(releaseTime * 1000)) + "ms", juce::dontSendNotification);
+    }
+
+    void labelTextChanged(juce::Label* labelThatHasChanged) override
+    {
+        juce::String text = labelThatHasChanged->getText().trim();
+        // Strip suffix
+        text = text.replace("ms", "").replace("MS", "").replace("%", "").trim();
+        float numericValue = text.getFloatValue();
+
+        if (labelThatHasChanged == &attackValueLabel)
+        {
+            attackTime = juce::jlimit(0.001f, 10.0f, numericValue / 1000.0f);
+            if (onAttackChanged) onAttackChanged(attackTime);
+        }
+        else if (labelThatHasChanged == &decayValueLabel)
+        {
+            decayTime = juce::jlimit(0.001f, 10.0f, numericValue / 1000.0f);
+            if (onDecayChanged) onDecayChanged(decayTime);
+        }
+        else if (labelThatHasChanged == &sustainValueLabel)
+        {
+            sustainLevel = juce::jlimit(0.0f, 1.0f, numericValue / 100.0f);
+            if (onSustainChanged) onSustainChanged(sustainLevel);
+        }
+        else if (labelThatHasChanged == &releaseValueLabel)
+        {
+            releaseTime = juce::jlimit(0.001f, 10.0f, numericValue / 1000.0f);
+            if (onReleaseChanged) onReleaseChanged(releaseTime);
+        }
+
+        updateValueLabels();
+        repaint();
+    }
+
+    void editorShown(juce::Label* label, juce::TextEditor& editor) override
+    {
+        isEditingLabel = true;
+        // Select all text for easy replacement
+        editor.selectAll();
+        editor.setJustification(juce::Justification::centred);
+        editor.setColour(juce::TextEditor::backgroundColourId, HellcatColors::panelDark);
+        editor.setColour(juce::TextEditor::textColourId, HellcatColors::textPrimary);
+        editor.setColour(juce::TextEditor::highlightColourId, HellcatColors::hellcatRed.withAlpha(0.4f));
+        editor.setColour(juce::TextEditor::focusedOutlineColourId, HellcatColors::hellcatRed);
+    }
+
+    void editorHidden(juce::Label*, juce::TextEditor&) override
+    {
+        isEditingLabel = false;
+    }
+
+    // Editable value labels
+    juce::Label attackValueLabel;
+    juce::Label decayValueLabel;
+    juce::Label sustainValueLabel;
+    juce::Label releaseValueLabel;
+    bool isEditingLabel = false;
 
     float attackTime = 0.045f;
     float decayTime = 0.28f;

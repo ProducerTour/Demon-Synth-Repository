@@ -30,6 +30,19 @@ public:
         rateSlider.setValue(2.5);
         rateSlider.setTextValueSuffix(" Hz");
         addAndMakeVisible(rateSlider);
+
+        // Sync toggle button
+        syncButton.setButtonText("SYNC");
+        syncButton.setColour(juce::TextButton::buttonColourId, HellcatColors::panelDark);
+        syncButton.setColour(juce::TextButton::buttonOnColourId, HellcatColors::hellcatRed);
+        syncButton.setColour(juce::TextButton::textColourOffId, HellcatColors::textTertiary);
+        syncButton.setColour(juce::TextButton::textColourOnId, HellcatColors::textPrimary);
+        syncButton.setClickingTogglesState(true);
+        syncButton.setTooltip("Sync LFO to note retrigger");
+        syncButton.onClick = [this]() {
+            if (onSyncChange) onSyncChange(syncButton.getToggleState());
+        };
+        addAndMakeVisible(syncButton);
     }
 
     void paint(juce::Graphics& g) override
@@ -50,7 +63,10 @@ public:
 
         // Title in red with Orbitron font
         g.setColour(HellcatColors::hellcatRed);
-        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 14.0f, juce::Font::bold));
+        if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
+            g.setFont(lf->getOrbitronFont(14.0f));
+        else
+            g.setFont(juce::Font(14.0f, juce::Font::bold));
         g.drawText(title, titleBounds, juce::Justification::centred);
 
         // Draw waveform visualization
@@ -77,14 +93,23 @@ public:
 
         bounds.removeFromTop(10);
 
-        // Rate slider
-        rateSlider.setBounds(bounds.reduced(10, 0));
+        // Rate slider + sync button
+        auto rateBounds = bounds.reduced(10, 0);
+        syncButton.setBounds(rateBounds.removeFromBottom(24).reduced(10, 2));
+        rateSlider.setBounds(rateBounds);
     }
 
     juce::Slider& getRateSlider() { return rateSlider; }
+    juce::TextButton& getSyncButton() { return syncButton; }
     int getSelectedWave() const { return selectedWave; }
 
+    void setSyncState(bool synced)
+    {
+        syncButton.setToggleState(synced, juce::dontSendNotification);
+    }
+
     std::function<void(int)> onWaveChange;
+    std::function<void(bool)> onSyncChange;
 
 private:
     void drawWaveform(juce::Graphics& g, juce::Rectangle<int> bounds)
@@ -168,6 +193,7 @@ private:
     juce::String title;
     juce::TextButton waveButtons[5];
     juce::Slider rateSlider;
+    juce::TextButton syncButton;
     juce::Rectangle<int> titleBounds;
     juce::Rectangle<int> waveformBounds;
     int selectedWave = 0;

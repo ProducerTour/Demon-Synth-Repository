@@ -16,6 +16,8 @@ namespace BinaryData
     extern const int Sofachrome_Rg_otfSize;
     extern const char* Sofachrome_Rg_It_otf;
     extern const int Sofachrome_Rg_It_otfSize;
+    extern const char* carbon_fiber_jpg;
+    extern const int carbon_fiber_jpgSize;
 }
 
 namespace HellcatColors
@@ -55,6 +57,11 @@ public:
         if (BinaryData::Sofachrome_Rg_It_otf != nullptr)
             sofachromeItalic = juce::Typeface::createSystemTypefaceFor(
                 BinaryData::Sofachrome_Rg_It_otf, BinaryData::Sofachrome_Rg_It_otfSize);
+
+        // Load carbon fiber texture
+        if (BinaryData::carbon_fiber_jpg != nullptr)
+            carbonFiberImage = juce::ImageCache::getFromMemory(
+                BinaryData::carbon_fiber_jpg, BinaryData::carbon_fiber_jpgSize);
 
         // Set default colors
         setColour(juce::ResizableWindow::backgroundColourId, HellcatColors::background);
@@ -114,6 +121,8 @@ public:
         return juce::Font(juce::Font::getDefaultSansSerifFontName(), height, juce::Font::italic);
     }
 
+    const juce::Image& getCarbonFiberImage() const { return carbonFiberImage; }
+
     // Override JUCE font methods to use Rajdhani as default (with fallbacks)
     juce::Font getLabelFont(juce::Label& label) override
     {
@@ -157,6 +166,7 @@ private:
     juce::Typeface::Ptr rajdhaniSemiBold;
     juce::Typeface::Ptr sofachrome;
     juce::Typeface::Ptr sofachromeItalic;
+    juce::Image carbonFiberImage;
 
 public:
     

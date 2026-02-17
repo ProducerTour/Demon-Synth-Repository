@@ -102,6 +102,12 @@ public:
         updateEnvelope();
     }
 
+    void setPitchBendRange(int semitones)
+    {
+        pitchBendRange = juce::jlimit(1, 48, semitones);
+        updatePitchRatio();
+    }
+
     bool canPlaySound(juce::SynthesiserSound* sound) override
     {
         return dynamic_cast<TempoSyncSamplerSound*>(sound) != nullptr;
@@ -142,11 +148,6 @@ public:
                 " Pitch Ratio: " + juce::String(pitchRatio) +
                 " Env Enabled: " + juce::String(envParams.enabled ? "YES" : "NO"));
 
-            // Log to file for debugging multisampled playback
-            juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("DemonSynth_debug.log");
-            logFile.appendText("NoteON: MIDI=" + juce::String(midiNoteNumber) +
-                " Root=" + juce::String(sound->getMidiNoteForNormalPitch()) +
-                " PitchRatio=" + juce::String(pitchRatio, 4) + "\n");
         }
         else
         {
@@ -239,8 +240,8 @@ private:
         // This gives traditional sampler behavior where pitch and speed change together
         pitchRatio = baseFrequencyRatio * baseSampleRateRatio;
 
-        // Apply pitch wheel (+/- 2 semitones)
-        pitchRatio *= std::pow(2.0, (currentPitchWheel - 8192) / 8192.0 / 6.0);
+        // Apply pitch wheel (+/- pitchBendRange semitones)
+        pitchRatio *= std::pow(2.0, (currentPitchWheel - 8192) / 8192.0 * pitchBendRange / 12.0);
 
         // Note: Tempo sync is disabled for one-shot samples
         // One-shots should play at their natural pitch based on MIDI note
@@ -288,6 +289,7 @@ private:
     bool tempoSyncEnabled = false; // Disabled for one-shot samples
     int currentMidiNote = 60;
     int currentPitchWheel = 8192;
+    int pitchBendRange = 2; // semitones
 
     DSP::ADSR adsr;  // Using our custom ADSR with curve support
     SampleEnvelopeParams envParams;
@@ -458,6 +460,8 @@ public:
 
     void noteOn(int midiChannel, int midiNote, float velocity)
     {
+        // Apply velocity curve before passing to synth
+        velocity = std::pow(velocity, velocityCurve);
         synth.noteOn(midiChannel, midiNote, velocity);
     }
 
@@ -505,6 +509,22 @@ public:
     }
 
     const SampleEnvelopeParams& getEnvelopeParams() const { return envParams; }
+
+    void setPitchBendRange(int semitones)
+    {
+        for (int i = 0; i < synth.getNumVoices(); ++i)
+        {
+            if (auto* voice = dynamic_cast<TempoSyncSamplerVoice*>(synth.getVoice(i)))
+                voice->setPitchBendRange(semitones);
+        }
+    }
+
+    void setVelocityCurve(float curve)
+    {
+        velocityCurve = curve;
+    }
+
+    float getVelocityCurve() const { return velocityCurve; }
 
 private:
     /**
@@ -580,6 +600,7 @@ private:
     bool tempoSyncEnabled = true;
     juce::File currentSampleFile;
     SampleEnvelopeParams envParams;
+    float velocityCurve = 1.0f;
 };
 
 } // namespace Engine

@@ -101,21 +101,83 @@ PluginEditor::PluginEditor(PluginProcessor& p)
             param->setValueNotifyingHost(static_cast<float>(paramValue) / 3.0f); // 4 filter types (0-3)
     };
 
+    // Gauge drag callbacks — interactive gauges
+    oscillatorPanel.onGaugeValueChange = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("unison_voices"))
+            param->setValueNotifyingHost(param->convertTo0to1(value));
+    };
+    filterPanel.onGaugeValueChange = [this](float hzValue) {
+        if (auto* param = processor.getAPVTS().getParameter("filter_cutoff"))
+            param->setValueNotifyingHost(param->convertTo0to1(hzValue));
+    };
+
+    // OSC2 callbacks
+    oscillatorPanel.onOsc2WaveformChange = [this](int waveIndex) {
+        int paramValue = 0;
+        switch (waveIndex) {
+            case 0: paramValue = 1; break; // SAW
+            case 1: paramValue = 2; break; // SQR
+            case 2: paramValue = 3; break; // TRI
+            case 3: paramValue = 0; break; // SIN
+        }
+        if (auto* param = processor.getAPVTS().getParameter("osc2_wave"))
+            param->setValueNotifyingHost(static_cast<float>(paramValue) / 5.0f);
+    };
+    oscillatorPanel.onOsc2GaugeValueChange = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("osc2_level"))
+            param->setValueNotifyingHost(value); // Already 0-1
+    };
+    oscillatorPanel.onOsc1EnabledChange = [this](bool enabled) {
+        if (auto* param = processor.getAPVTS().getParameter("osc1_enabled"))
+            param->setValueNotifyingHost(enabled ? 1.0f : 0.0f);
+    };
+    oscillatorPanel.onOsc2EnabledChange = [this](bool enabled) {
+        if (auto* param = processor.getAPVTS().getParameter("osc2_enabled"))
+            param->setValueNotifyingHost(enabled ? 1.0f : 0.0f);
+    };
+
     // ===== Center Tabbed Panel =====
     // Create tab content components
     modMatrixPanel = std::make_unique<HellcatModMatrix>();
-    envelopePanel = std::make_unique<EnvelopePanelContainer>(ampEnvelopeDisplay);
+    envelopePanel = std::make_unique<EnvelopePanelContainer>(ampEnvelopeDisplay, filterEnvelopeDisplay);
     lfoPanel = std::make_unique<LFOPanelContainer>(lfo1Panel, lfo2Panel);
+
+    // Create FX panel
+    fxPanel = std::make_unique<HellcatFXPanel>();
 
     // Add content to custom tabbed panel (avoids JUCE overflow issues)
     tabbedPanel.setTabContent(0, modMatrixPanel.get());
     tabbedPanel.setTabContent(1, envelopePanel.get());
     tabbedPanel.setTabContent(2, lfoPanel.get());
+    tabbedPanel.setTabContent(3, fxPanel.get());
     tabbedPanel.setCurrentTab(1); // Default to ENVELOPES
 
     addAndMakeVisible(tabbedPanel);
 
+    // FX enable callbacks
+    fxPanel->onReverbEnableChanged = [this](bool enabled) {
+        if (auto* param = processor.getAPVTS().getParameter("reverb_enabled"))
+            param->setValueNotifyingHost(enabled ? 1.0f : 0.0f);
+    };
+    fxPanel->onDelayEnableChanged = [this](bool enabled) {
+        if (auto* param = processor.getAPVTS().getParameter("delay_enabled"))
+            param->setValueNotifyingHost(enabled ? 1.0f : 0.0f);
+    };
+    fxPanel->onChorusEnableChanged = [this](bool enabled) {
+        if (auto* param = processor.getAPVTS().getParameter("chorus_enabled"))
+            param->setValueNotifyingHost(enabled ? 1.0f : 0.0f);
+    };
+
+    // Voice mode callback
+    topBar.onVoiceModeChange = [this](int mode) {
+        if (auto* param = processor.getAPVTS().getParameter("voice_mode"))
+            param->setValueNotifyingHost(static_cast<float>(mode) / 2.0f); // 3 modes (0-2)
+    };
+
     // ===== Bottom Section =====
+    // Oscilloscope
+    addAndMakeVisible(oscilloscope);
+
     // XY Pad - connects to stereo width and reverb/delay mix
     addAndMakeVisible(xyPad);
     xyPad.onValueChange = [this](float x, float y) {
@@ -153,8 +215,9 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     // Apply Hellcat colors to keyboard
     keyboardComponent.setColour(juce::MidiKeyboardComponent::keyDownOverlayColourId, HellcatColors::hellcatRed);
     keyboardComponent.setColour(juce::MidiKeyboardComponent::mouseOverKeyOverlayColourId, HellcatColors::hellcatRed.withAlpha(0.3f));
-    keyboardComponent.setColour(juce::MidiKeyboardComponent::whiteNoteColourId, juce::Colour(0xff1a1d22));
+    keyboardComponent.setColour(juce::MidiKeyboardComponent::whiteNoteColourId, juce::Colour(0xff3a3d42));
     keyboardComponent.setColour(juce::MidiKeyboardComponent::blackNoteColourId, HellcatColors::background);
+    keyboardComponent.setColour(juce::MidiKeyboardComponent::keySeparatorLineColourId, juce::Colour(0xff555555));
 
     // Listen for keyboard state changes
     keyboardState.addListener(this);
@@ -181,6 +244,72 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "lfo2_rate", lfo2Panel.getRateSlider()));
 
+    // Noise level attachment
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "noise_level", oscillatorPanel.getNoiseSlider()));
+
+    // Glide time attachment
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "glide_time", topBar.getGlideSlider()));
+
+    // Oscillator pitch/pan attachments — OSC1
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "osc1_octave", oscillatorPanel.getOsc1OctaveSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "osc1_semi", oscillatorPanel.getOsc1SemiSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "osc1_fine", oscillatorPanel.getOsc1FineSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "osc1_pan", oscillatorPanel.getOsc1PanSlider()));
+
+    // Oscillator pitch/pan attachments — OSC2
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "osc2_octave", oscillatorPanel.getOsc2OctaveSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "osc2_semi", oscillatorPanel.getOsc2SemiSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "osc2_fine", oscillatorPanel.getOsc2FineSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "osc2_pan", oscillatorPanel.getOsc2PanSlider()));
+
+    // Unison detune attachment
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "unison_detune", oscillatorPanel.getDetuneSlider()));
+
+    // FX slider attachments — Reverb
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "reverb_mix", fxPanel->getReverbMixSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "reverb_size", fxPanel->getReverbSizeSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "reverb_damping", fxPanel->getReverbDampingSlider()));
+
+    // FX slider attachments — Delay
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "delay_mix", fxPanel->getDelayMixSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "delay_time", fxPanel->getDelayTimeSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "delay_feedback", fxPanel->getDelayFeedbackSlider()));
+
+    // FX slider attachments — Chorus
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "chorus_mix", fxPanel->getChorusMixSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "chorus_rate", fxPanel->getChorusRateSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "chorus_depth", fxPanel->getChorusDepthSlider()));
+
+    // FX slider attachments — Flanger
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "flanger_mix", fxPanel->getFlangerMixSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "flanger_rate", fxPanel->getFlangerRateSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "flanger_depth", fxPanel->getFlangerDepthSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "flanger_feedback", fxPanel->getFlangerFeedbackSlider()));
+
     // LFO wave change callbacks (update parameter manually since we're using button groups)
     lfo1Panel.onWaveChange = [this](int waveIndex) {
         if (auto* param = processor.getAPVTS().getParameter("lfo1_wave"))
@@ -189,6 +318,22 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     lfo2Panel.onWaveChange = [this](int waveIndex) {
         if (auto* param = processor.getAPVTS().getParameter("lfo2_wave"))
             param->setValueNotifyingHost(static_cast<float>(waveIndex) / 6.0f);
+    };
+
+    // LFO sync callbacks
+    lfo1Panel.onSyncChange = [this](bool synced) {
+        if (auto* param = processor.getAPVTS().getParameter("lfo1_sync"))
+            param->setValueNotifyingHost(synced ? 1.0f : 0.0f);
+    };
+    lfo2Panel.onSyncChange = [this](bool synced) {
+        if (auto* param = processor.getAPVTS().getParameter("lfo2_sync"))
+            param->setValueNotifyingHost(synced ? 1.0f : 0.0f);
+    };
+
+    // Glide always callback
+    topBar.onGlideAlwaysChange = [this](bool always) {
+        if (auto* param = processor.getAPVTS().getParameter("glide_always"))
+            param->setValueNotifyingHost(always ? 1.0f : 0.0f);
     };
 
     // Envelope touchpoint callbacks - connect to amp envelope parameters
@@ -223,10 +368,60 @@ PluginEditor::PluginEditor(PluginProcessor& p)
             param->setValueNotifyingHost(param->convertTo0to1(value));
     };
 
+    // Filter envelope callbacks
+    filterEnvelopeDisplay.onAttackChanged = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("filter_attack"))
+            param->setValueNotifyingHost(param->convertTo0to1(value));
+    };
+    filterEnvelopeDisplay.onDecayChanged = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("filter_decay"))
+            param->setValueNotifyingHost(param->convertTo0to1(value));
+    };
+    filterEnvelopeDisplay.onSustainChanged = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("filter_sustain"))
+            param->setValueNotifyingHost(value);
+    };
+    filterEnvelopeDisplay.onReleaseChanged = [this](float value) {
+        if (auto* param = processor.getAPVTS().getParameter("filter_release"))
+            param->setValueNotifyingHost(param->convertTo0to1(value));
+    };
+
+    // Filter resonance knob attachment
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "filter_reso", filterPanel.getResoSlider()));
+
+    // Filter env amount knob attachment
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "filter_env_amt", envelopePanel->getEnvAmtSlider()));
+
     // Envelope enable toggle callback
     envelopePanel->onEnableChanged = [this](bool enabled) {
         if (auto* param = processor.getAPVTS().getParameter("amp_env_enabled"))
             param->setValueNotifyingHost(enabled ? 1.0f : 0.0f);
+    };
+
+    // Envelope preset shape callback
+    envelopePanel->onPresetApplied = [this](int target, float a, float d, float s, float r,
+                                            float aCurve, float dCurve, float rCurve) {
+        auto& apvts = processor.getAPVTS();
+        if (target == 0) // AMP
+        {
+            if (auto* p = apvts.getParameter("amp_attack"))    p->setValueNotifyingHost(p->convertTo0to1(a));
+            if (auto* p = apvts.getParameter("amp_decay"))     p->setValueNotifyingHost(p->convertTo0to1(d));
+            if (auto* p = apvts.getParameter("amp_sustain"))   p->setValueNotifyingHost(s);
+            if (auto* p = apvts.getParameter("amp_release"))   p->setValueNotifyingHost(p->convertTo0to1(r));
+            if (auto* p = apvts.getParameter("amp_attack_curve"))  p->setValueNotifyingHost(p->convertTo0to1(aCurve));
+            if (auto* p = apvts.getParameter("amp_decay_curve"))   p->setValueNotifyingHost(p->convertTo0to1(dCurve));
+            if (auto* p = apvts.getParameter("amp_release_curve")) p->setValueNotifyingHost(p->convertTo0to1(rCurve));
+        }
+        else // FILTER
+        {
+            if (auto* p = apvts.getParameter("filter_attack"))    p->setValueNotifyingHost(p->convertTo0to1(a));
+            if (auto* p = apvts.getParameter("filter_decay"))     p->setValueNotifyingHost(p->convertTo0to1(d));
+            if (auto* p = apvts.getParameter("filter_sustain"))   p->setValueNotifyingHost(s);
+            if (auto* p = apvts.getParameter("filter_release"))   p->setValueNotifyingHost(p->convertTo0to1(r));
+            // Filter envelope doesn't have curve params, but we can still update the display
+        }
     };
 
     // Load presets
@@ -250,12 +445,6 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     DBG("Current preset from processor: '" + currentPreset + "'");
     DBG("Sample loaded in synth: " + juce::String(sampleLoaded ? "YES" : "NO"));
     DBG("allPresetsFlat size: " + juce::String(allPresetsFlat.size()));
-
-    // Write to log file for debugging
-    juce::File logFile = juce::File::getSpecialLocation(juce::File::userDesktopDirectory).getChildFile("DemonSynth_debug.log");
-    logFile.appendText("\n=== PluginEditor constructor at " + juce::Time::getCurrentTime().toString(true, true) + " ===\n");
-    logFile.appendText("Current preset from processor: '" + currentPreset + "'\n");
-    logFile.appendText("Sample loaded in synth: " + juce::String(sampleLoaded ? "YES" : "NO") + "\n");
 
     if (currentPreset.isNotEmpty())
     {
@@ -289,6 +478,19 @@ PluginEditor::PluginEditor(PluginProcessor& p)
         DBG("No preset name stored and no sample loaded - UI will show default");
     }
 
+    // ===== Tooltips =====
+    tooltipWindow = std::make_unique<juce::TooltipWindow>(this, 500);
+
+    boostKnob.getSlider().setTooltip("BOOST - Adds drive and presence to the output");
+    airKnob.getSlider().setTooltip("AIR - Boosts high frequencies for brightness");
+    bodyKnob.getSlider().setTooltip("BODY - Adds low-end warmth and weight");
+    warpKnob.getSlider().setTooltip("WARP - Modulates flanger for movement and character");
+    engineStartButton.setTooltip("Enable or disable the effects engine");
+    filterPanel.getResoSlider().setTooltip("Filter Resonance");
+    lfo1Panel.getRateSlider().setTooltip("LFO 1 Rate (Hz)");
+    lfo2Panel.getRateSlider().setTooltip("LFO 2 Rate (Hz)");
+    topBar.getGlideSlider().setTooltip("Glide/Portamento Time");
+
     // Start timer for updates
     startTimerHz(30);
 }
@@ -316,15 +518,18 @@ void PluginEditor::resized()
     auto keyboardBounds = bounds.removeFromBottom(50);
     keyboardComponent.setBounds(keyboardBounds.reduced(20, 0));
 
-    // Bottom section - 110px (XY pad, macros, buttons)
+    // Bottom section - 110px (XY pad, scope, macros, buttons)
     auto bottomSection = bounds.removeFromBottom(110);
     bottomSection.reduce(20, 5);
 
     // XY Pad - left side
-    xyPad.setBounds(bottomSection.removeFromLeft(140));
+    xyPad.setBounds(bottomSection.removeFromLeft(120));
+
+    // Oscilloscope - next to XY pad
+    oscilloscope.setBounds(bottomSection.removeFromLeft(120));
 
     // Engine Start button - right side (circular, needs square bounds)
-    auto buttonBounds = bottomSection.removeFromRight(110);
+    auto buttonBounds = bottomSection.removeFromRight(100);
     buttonBounds.reduce(5, 5);
     // Make it square and centered
     int buttonSize = std::min(buttonBounds.getWidth(), buttonBounds.getHeight());
@@ -361,64 +566,193 @@ void PluginEditor::timerCallback()
 {
     auto& apvts = processor.getAPVTS();
 
-    // Update oscillator panel with unison voices
+    // RMS meter always updates (animated)
+    topBar.setRmsLevel(processor.getRmsLevel());
+
+    // Only repaint components when their values actually change
     float unisonVoices = apvts.getRawParameterValue("unison_voices")->load();
-    oscillatorPanel.setValue(unisonVoices);
+    if (unisonVoices != lastUnisonVoices)
+    {
+        lastUnisonVoices = unisonVoices;
+        oscillatorPanel.setValue(unisonVoices);
+    }
 
-    // Update oscillator waveform display from parameter
     int oscWave = static_cast<int>(apvts.getRawParameterValue("osc1_wave")->load());
-    // Map param value to UI: 0=Sine->3, 1=Saw->0, 2=Square->1, 3=Triangle->2
-    int uiWave = 0;
-    switch (oscWave) {
-        case 0: uiWave = 3; break; // Sine -> SIN button
-        case 1: uiWave = 0; break; // Saw -> SAW button
-        case 2: uiWave = 1; break; // Square -> SQR button
-        case 3: uiWave = 2; break; // Triangle -> TRI button
+    if (oscWave != lastOscWave)
+    {
+        lastOscWave = oscWave;
+        int uiWave = 0;
+        switch (oscWave) {
+            case 0: uiWave = 3; break;
+            case 1: uiWave = 0; break;
+            case 2: uiWave = 1; break;
+            case 3: uiWave = 2; break;
+        }
+        oscillatorPanel.setWaveform(uiWave);
     }
-    oscillatorPanel.setWaveform(uiWave);
 
-    // Update filter panel with cutoff (convert Hz to kHz)
     float cutoffHz = apvts.getRawParameterValue("filter_cutoff")->load();
-    filterPanel.setValue(cutoffHz / 1000.0f);
-
-    // Update filter type display from parameter
-    int filterType = static_cast<int>(apvts.getRawParameterValue("filter_type")->load());
-    // Map param value to UI: 0=LP->0, 1=HP->3, 2=BP->2, 3=Notch->?
-    int uiFilter = 0;
-    switch (filterType) {
-        case 0: uiFilter = 0; break; // LP -> LP12 button
-        case 1: uiFilter = 3; break; // HP -> HP button
-        case 2: uiFilter = 2; break; // BP -> BP button
-        case 3: uiFilter = 0; break; // Notch -> LP12 (fallback)
+    if (cutoffHz != lastCutoffHz)
+    {
+        lastCutoffHz = cutoffHz;
+        filterPanel.setValue(cutoffHz / 1000.0f);
     }
-    filterPanel.setFilterType(uiFilter);
 
-    // Update XY Pad from parameters
+    int filterType = static_cast<int>(apvts.getRawParameterValue("filter_type")->load());
+    if (filterType != lastFilterType)
+    {
+        lastFilterType = filterType;
+        int uiFilter = 0;
+        switch (filterType) {
+            case 0: uiFilter = 0; break;
+            case 1: uiFilter = 3; break;
+            case 2: uiFilter = 2; break;
+            case 3: uiFilter = 0; break;
+        }
+        filterPanel.setFilterType(uiFilter);
+    }
+
     float spread = apvts.getRawParameterValue("unison_spread")->load();
     float reverbMix = apvts.getRawParameterValue("reverb_mix")->load();
-    xyPad.setValues(spread, reverbMix);
+    if (spread != lastSpread || reverbMix != lastReverbMix)
+    {
+        lastSpread = spread;
+        lastReverbMix = reverbMix;
+        xyPad.setValues(spread, reverbMix);
+    }
 
-    // Update envelope display
     float ampA = apvts.getRawParameterValue("amp_attack")->load();
     float ampD = apvts.getRawParameterValue("amp_decay")->load();
     float ampS = apvts.getRawParameterValue("amp_sustain")->load();
     float ampR = apvts.getRawParameterValue("amp_release")->load();
-    ampEnvelopeDisplay.setADSR(ampA, ampD, ampS, ampR);
+    if (ampA != lastAmpA || ampD != lastAmpD || ampS != lastAmpS || ampR != lastAmpR)
+    {
+        lastAmpA = ampA; lastAmpD = ampD; lastAmpS = ampS; lastAmpR = ampR;
+        ampEnvelopeDisplay.setADSR(ampA, ampD, ampS, ampR);
+    }
 
-    // Update envelope curves
     float atkCurve = apvts.getRawParameterValue("amp_attack_curve")->load();
     float decCurve = apvts.getRawParameterValue("amp_decay_curve")->load();
     float relCurve = apvts.getRawParameterValue("amp_release_curve")->load();
-    ampEnvelopeDisplay.setCurves(atkCurve, decCurve, relCurve);
+    if (atkCurve != lastAtkCurve || decCurve != lastDecCurve || relCurve != lastRelCurve)
+    {
+        lastAtkCurve = atkCurve; lastDecCurve = decCurve; lastRelCurve = relCurve;
+        ampEnvelopeDisplay.setCurves(atkCurve, decCurve, relCurve);
+    }
 
-    // Update envelope enable button state
+    float filtA = apvts.getRawParameterValue("filter_attack")->load();
+    float filtD = apvts.getRawParameterValue("filter_decay")->load();
+    float filtS = apvts.getRawParameterValue("filter_sustain")->load();
+    float filtR = apvts.getRawParameterValue("filter_release")->load();
+    if (filtA != lastFiltA || filtD != lastFiltD || filtS != lastFiltS || filtR != lastFiltR)
+    {
+        lastFiltA = filtA; lastFiltD = filtD; lastFiltS = filtS; lastFiltR = filtR;
+        filterEnvelopeDisplay.setADSR(filtA, filtD, filtS, filtR);
+    }
+
     bool envEnabled = apvts.getRawParameterValue("amp_env_enabled")->load() > 0.5f;
     envelopePanel->setEnvelopeEnabled(envEnabled);
 
-    // Update engine start button state from flanger parameter
     bool flangerEnabled = apvts.getRawParameterValue("flanger_enabled")->load() > 0.5f;
     if (engineStartButton.getToggleState() != flangerEnabled)
         engineStartButton.setToggleState(flangerEnabled, juce::dontSendNotification);
+
+    // OSC2 sync
+    int osc2Wave = static_cast<int>(apvts.getRawParameterValue("osc2_wave")->load());
+    if (osc2Wave != lastOsc2Wave)
+    {
+        lastOsc2Wave = osc2Wave;
+        int uiWave = 0;
+        switch (osc2Wave) {
+            case 0: uiWave = 3; break; // Sine -> SIN
+            case 1: uiWave = 0; break; // Saw -> SAW
+            case 2: uiWave = 1; break; // Square -> SQR
+            case 3: uiWave = 2; break; // Triangle -> TRI
+        }
+        oscillatorPanel.setOsc2Waveform(uiWave);
+    }
+
+    float osc2Level = apvts.getRawParameterValue("osc2_level")->load();
+    if (osc2Level != lastOsc2Level)
+    {
+        lastOsc2Level = osc2Level;
+        oscillatorPanel.setOsc2Level(osc2Level);
+    }
+
+    bool osc1Enabled = apvts.getRawParameterValue("osc1_enabled")->load() > 0.5f;
+    if (osc1Enabled != lastOsc1Enabled)
+    {
+        lastOsc1Enabled = osc1Enabled;
+        oscillatorPanel.setOsc1Enabled(osc1Enabled);
+    }
+
+    bool osc2Enabled = apvts.getRawParameterValue("osc2_enabled")->load() > 0.5f;
+    if (osc2Enabled != lastOsc2Enabled)
+    {
+        lastOsc2Enabled = osc2Enabled;
+        oscillatorPanel.setOsc2Enabled(osc2Enabled);
+    }
+
+    // Voice mode sync
+    int voiceMode = static_cast<int>(apvts.getRawParameterValue("voice_mode")->load());
+    if (voiceMode != lastVoiceMode)
+    {
+        lastVoiceMode = voiceMode;
+        topBar.setVoiceMode(voiceMode);
+    }
+
+    // FX enable sync
+    bool reverbEnabled = apvts.getRawParameterValue("reverb_enabled")->load() > 0.5f;
+    if (reverbEnabled != lastReverbEnabled)
+    {
+        lastReverbEnabled = reverbEnabled;
+        fxPanel->setReverbEnabled(reverbEnabled);
+    }
+
+    bool delayEnabled = apvts.getRawParameterValue("delay_enabled")->load() > 0.5f;
+    if (delayEnabled != lastDelayEnabled)
+    {
+        lastDelayEnabled = delayEnabled;
+        fxPanel->setDelayEnabled(delayEnabled);
+    }
+
+    bool chorusEnabled = apvts.getRawParameterValue("chorus_enabled")->load() > 0.5f;
+    if (chorusEnabled != lastChorusEnabled)
+    {
+        lastChorusEnabled = chorusEnabled;
+        fxPanel->setChorusEnabled(chorusEnabled);
+    }
+
+    // Glide always sync
+    bool glideAlways = apvts.getRawParameterValue("glide_always")->load() > 0.5f;
+    if (glideAlways != lastGlideAlways)
+    {
+        lastGlideAlways = glideAlways;
+        topBar.setGlideAlways(glideAlways);
+    }
+
+    // LFO sync state sync
+    bool lfo1Sync = apvts.getRawParameterValue("lfo1_sync")->load() > 0.5f;
+    bool lfo2Sync = apvts.getRawParameterValue("lfo2_sync")->load() > 0.5f;
+    if (lfo1Sync != lastLfo1Sync)
+    {
+        lastLfo1Sync = lfo1Sync;
+        lfo1Panel.setSyncState(lfo1Sync);
+    }
+    if (lfo2Sync != lastLfo2Sync)
+    {
+        lastLfo2Sync = lfo2Sync;
+        lfo2Panel.setSyncState(lfo2Sync);
+    }
+
+    // Oscilloscope update
+    if (processor.isScopeReady())
+    {
+        const auto& scopeData = processor.getScopeBuffer();
+        oscilloscope.pushBuffer(scopeData.data(), PluginProcessor::SCOPE_SIZE);
+        processor.clearScopeReady();
+        oscilloscope.updateDisplay();
+    }
 }
 
 // Computer keyboard -> MIDI note mapping

@@ -28,14 +28,20 @@ public:
 
         // Label
         g.setColour(HellcatColors::hellcatRed);
-        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 11.0f, juce::Font::bold));
+        if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
+            g.setFont(lf->getOrbitronFont(11.0f));
+        else
+            g.setFont(juce::Font(11.0f, juce::Font::bold));
         auto labelBounds = bounds.removeFromTop(labelHeight);
         g.drawText(knobName.toUpperCase(), labelBounds, juce::Justification::centred);
 
         // Value
         g.setColour(HellcatColors::textPrimary);
-        g.setFont(juce::Font(juce::Font::getDefaultSansSerifFontName(), 13.0f, juce::Font::bold));
-        g.drawText(juce::String(static_cast<int>(slider.getValue())) + "%", bounds,
+        if (auto* lf = dynamic_cast<HellcatLookAndFeel*>(&getLookAndFeel()))
+            g.setFont(lf->getOrbitronFont(13.0f));
+        else
+            g.setFont(juce::Font(13.0f, juce::Font::bold));
+        g.drawText(juce::String(juce::roundToInt(slider.getValue())) + "%", bounds,
                    juce::Justification::centred);
     }
 
