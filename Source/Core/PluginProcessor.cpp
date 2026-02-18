@@ -451,6 +451,15 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     auto lfo2Wave = static_cast<DSP::LFO::Waveform>(
         static_cast<int>(apvts.getRawParameterValue("lfo2_wave")->load()));
     float lfo2Rate = apvts.getRawParameterValue("lfo2_rate")->load();
+
+    // Tempo sync: scale LFO rate proportionally to host BPM (baseline 120 BPM)
+    bool lfo1Sync = apvts.getRawParameterValue("lfo1_sync")->load() > 0.5f;
+    bool lfo2Sync = apvts.getRawParameterValue("lfo2_sync")->load() > 0.5f;
+    if (lfo1Sync && currentBPM > 0.0)
+        lfo1Rate *= static_cast<float>(currentBPM / 120.0);
+    if (lfo2Sync && currentBPM > 0.0)
+        lfo2Rate *= static_cast<float>(currentBPM / 120.0);
+
     voiceManager.setLFOParams(lfo1Wave, lfo1Rate, lfo2Wave, lfo2Rate);
 
     // Unison
@@ -666,6 +675,55 @@ juce::AudioProcessorEditor* PluginProcessor::createEditor()
     return new PluginEditor(*this);
 }
 
+// Map UI combo IDs to ModSource enum values
+static Modulation::ModSource srcIdToEnum(int id)
+{
+    switch (id)
+    {
+        case 2: return Modulation::ModSource::LFO1;
+        case 3: return Modulation::ModSource::LFO2;
+        case 4: return Modulation::ModSource::AmpEnv;
+        case 5: return Modulation::ModSource::FilterEnv;
+        case 6: return Modulation::ModSource::Velocity;
+        case 7: return Modulation::ModSource::ModWheel;
+        default: return Modulation::ModSource::None;
+    }
+}
+
+// Map UI combo IDs to ModDest enum values
+static Modulation::ModDest dstIdToEnum(int id)
+{
+    switch (id)
+    {
+        case 2: return Modulation::ModDest::FilterCutoff;
+        case 3: return Modulation::ModDest::FilterResonance;
+        case 4: return Modulation::ModDest::Osc1Pitch;
+        case 5: return Modulation::ModDest::Osc1Level;
+        case 6: return Modulation::ModDest::AmpPan;
+        case 7: return Modulation::ModDest::AmpLevel;
+        default: return Modulation::ModDest::None;
+    }
+}
+
+void PluginProcessor::setModMatrixRow(int row, int srcId, int dstId, float amount)
+{
+    if (row < 0 || row >= 5) return;
+    modMatrixRows[static_cast<size_t>(row)] = { srcId, dstId, amount };
+
+    // Rebuild all voice mod matrices with the updated routings
+    voiceManager.rebuildModMatrix([&](Engine::SynthVoice& voice) {
+        auto& mm = voice.getModMatrix();
+        mm.clearRoutings();
+        for (const auto& r : modMatrixRows)
+        {
+            auto src = srcIdToEnum(r.srcId);
+            auto dst = dstIdToEnum(r.dstId);
+            if (src != Modulation::ModSource::None && dst != Modulation::ModDest::None)
+                mm.addRouting(src, dst, r.amount);
+        }
+    });
+}
+
 void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     DBG("=== getStateInformation called ===");
@@ -697,6 +755,17 @@ void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 
     // Save MIDI learn mappings
     midiLearn.saveToXml(*xml);
+
+    // Save mod matrix routings
+    auto* mmXml = xml->createNewChildElement("ModMatrixRoutings");
+    for (int i = 0; i < 5; ++i)
+    {
+        auto* row = mmXml->createNewChildElement("Row");
+        row->setAttribute("index",  i);
+        row->setAttribute("srcId",  modMatrixRows[static_cast<size_t>(i)].srcId);
+        row->setAttribute("dstId",  modMatrixRows[static_cast<size_t>(i)].dstId);
+        row->setAttribute("amount", modMatrixRows[static_cast<size_t>(i)].amount);
+    }
 
     DBG("  XML output: " + xml->toString().substring(0, 500));
 
@@ -737,6 +806,23 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
 
             // Restore MIDI learn mappings
             midiLearn.loadFromXml(*xml);
+
+            // Restore mod matrix routings
+            if (auto* mmXml = xml->getChildByName("ModMatrixRoutings"))
+            {
+                for (auto* row : mmXml->getChildIterator())
+                {
+                    if (row->hasTagName("Row"))
+                    {
+                        int idx = row->getIntAttribute("index", -1);
+                        if (idx >= 0 && idx < 5)
+                            setModMatrixRow(idx,
+                                row->getIntAttribute("srcId",  1),
+                                row->getIntAttribute("dstId",  1),
+                                static_cast<float>(row->getDoubleAttribute("amount", 0.0)));
+                    }
+                }
+            }
 
             apvts.replaceState(newState);
             stateHasBeenRestored = true;

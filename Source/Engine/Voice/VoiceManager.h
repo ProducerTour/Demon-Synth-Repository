@@ -87,6 +87,13 @@ public:
             voice.setLFOParams(lfo1Wave, lfo1Rate, lfo2Wave, lfo2Rate);
     }
 
+    // Rebuild every voice's mod matrix using the provided callback
+    void rebuildModMatrix(const std::function<void(SynthVoice&)>& buildFn)
+    {
+        for (auto& voice : voices)
+            buildFn(voice);
+    }
+
     void noteOn(int midiNote, float velocity)
     {
         // Apply velocity curve: < 1.0 = soft response, > 1.0 = hard response

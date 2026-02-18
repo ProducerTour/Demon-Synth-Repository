@@ -85,6 +85,19 @@ public:
         resoLabel.setColour(juce::Label::textColourId, HellcatColors::textTertiary);
         resoLabel.setFont(juce::Font(9.0f, juce::Font::bold));
         addAndMakeVisible(resoLabel);
+
+        // Key track knob
+        keytrackSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        keytrackSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        keytrackSlider.setRange(0.0, 1.0, 0.01);
+        keytrackSlider.setTooltip("Filter Key Track — scales filter cutoff with MIDI note (0 = off, 1 = full)");
+        addAndMakeVisible(keytrackSlider);
+
+        keytrackLabel.setText("KEY", juce::dontSendNotification);
+        keytrackLabel.setJustificationType(juce::Justification::centred);
+        keytrackLabel.setColour(juce::Label::textColourId, HellcatColors::textTertiary);
+        keytrackLabel.setFont(juce::Font(9.0f, juce::Font::bold));
+        addAndMakeVisible(keytrackLabel);
     }
 
     void paint(juce::Graphics& g) override
@@ -181,11 +194,14 @@ public:
         // Gauge area (includes dots)
         gaugeBounds = bounds.removeFromTop(bounds.getHeight() - 110);
 
-        // Resonance knob row
+        // Resonance + Keytrack knob row
         auto resoArea = bounds.removeFromTop(30);
-        resoArea = resoArea.reduced(static_cast<int>(bounds.getWidth() * 0.25f), 0);
-        resoLabel.setBounds(resoArea.removeFromLeft(24));
-        resoSlider.setBounds(resoArea);
+        auto halfRow = resoArea.getWidth() / 2;
+        auto resoHalf = resoArea.removeFromLeft(halfRow);
+        resoLabel.setBounds(resoHalf.removeFromLeft(24));
+        resoSlider.setBounds(resoHalf);
+        keytrackLabel.setBounds(resoArea.removeFromLeft(24));
+        keytrackSlider.setBounds(resoArea);
 
         // Button area - 2x2 grid
         auto buttonArea = bounds.reduced(15, 5);
@@ -218,7 +234,8 @@ public:
     std::function<void(int)> onFilterTypeChange;
     std::function<void(float)> onGaugeValueChange;
 
-    juce::Slider& getResoSlider() { return resoSlider; }
+    juce::Slider& getResoSlider()     { return resoSlider; }
+    juce::Slider& getKeytrackSlider() { return keytrackSlider; }
 
     void mouseDown(const juce::MouseEvent& e) override
     {
@@ -536,7 +553,9 @@ private:
     HellcatFilterButton hpButton{"HP"};
 
     juce::Slider resoSlider;
-    juce::Label resoLabel;
+    juce::Label  resoLabel;
+    juce::Slider keytrackSlider;
+    juce::Label  keytrackLabel;
 
     juce::Rectangle<int> gaugeBounds;
     float currentValue = 7.2f;

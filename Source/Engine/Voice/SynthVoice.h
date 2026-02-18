@@ -4,7 +4,6 @@
 #include "../../DSP/Oscillators/Oscillator.h"
 #include "../../DSP/Oscillators/WavetableOscillator.h"
 #include "../../DSP/Filters/SVFFilter.h"
-#include "../../DSP/Filters/LadderFilter.h"
 #include "../../DSP/Modulators/ADSR.h"
 #include "../../DSP/Modulators/LFO.h"
 #include "../../Modulation/ModMatrix.h"
@@ -99,7 +98,6 @@ public:
         wavetableOsc2.prepare(sampleRate, samplesPerBlock);
 
         filter.prepare(sampleRate, samplesPerBlock);
-        ladderFilter.prepare(sampleRate, samplesPerBlock);
 
         ampEnv.prepare(sampleRate);
         filterEnv.prepare(sampleRate);
@@ -414,9 +412,8 @@ private:
     DSP::Oscillator osc1, osc2;
     DSP::WavetableOscillator wavetableOsc1, wavetableOsc2;
 
-    // Filters
+    // Filter
     DSP::SVFFilter filter;
-    DSP::LadderFilter ladderFilter;
 
     // Envelopes
     DSP::ADSR ampEnv, filterEnv, modEnv;

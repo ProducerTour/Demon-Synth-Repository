@@ -36,6 +36,45 @@ public:
         legatoButton.onClick = [this]() { if (onVoiceModeChange) onVoiceModeChange(2); };
         addAndMakeVisible(legatoButton);
 
+        // Master level knob
+        masterLevelSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        masterLevelSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        masterLevelSlider.setRange(0.0, 1.0, 0.01);
+        masterLevelSlider.setValue(0.7, juce::dontSendNotification);
+        masterLevelSlider.setTooltip("Master Output Level");
+        addAndMakeVisible(masterLevelSlider);
+        masterLevelLabel.setText("VOL", juce::dontSendNotification);
+        masterLevelLabel.setJustificationType(juce::Justification::centred);
+        masterLevelLabel.setColour(juce::Label::textColourId, HellcatColors::textTertiary);
+        masterLevelLabel.setFont(juce::Font(8.0f, juce::Font::bold));
+        addAndMakeVisible(masterLevelLabel);
+
+        // Velocity curve knob
+        velCurveSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        velCurveSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        velCurveSlider.setRange(0.25, 4.0, 0.01);
+        velCurveSlider.setValue(1.0, juce::dontSendNotification);
+        velCurveSlider.setTooltip("Velocity Curve (1.0 = linear, <1 = soft, >1 = hard)");
+        addAndMakeVisible(velCurveSlider);
+        velCurveLabel.setText("VEL", juce::dontSendNotification);
+        velCurveLabel.setJustificationType(juce::Justification::centred);
+        velCurveLabel.setColour(juce::Label::textColourId, HellcatColors::textTertiary);
+        velCurveLabel.setFont(juce::Font(8.0f, juce::Font::bold));
+        addAndMakeVisible(velCurveLabel);
+
+        // Pitch bend range knob (displayed as integer semitones)
+        pitchBendSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        pitchBendSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        pitchBendSlider.setRange(1.0, 48.0, 1.0);
+        pitchBendSlider.setValue(2.0, juce::dontSendNotification);
+        pitchBendSlider.setTooltip("Pitch Bend Range (semitones)");
+        addAndMakeVisible(pitchBendSlider);
+        pitchBendLabel.setText("PB", juce::dontSendNotification);
+        pitchBendLabel.setJustificationType(juce::Justification::centred);
+        pitchBendLabel.setColour(juce::Label::textColourId, HellcatColors::textTertiary);
+        pitchBendLabel.setFont(juce::Font(8.0f, juce::Font::bold));
+        addAndMakeVisible(pitchBendLabel);
+
         // Glide knob
         glideSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         glideSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
@@ -172,14 +211,26 @@ public:
         // Output meter (right)
         meterBounds = bounds.removeFromRight(100);
 
-        // Voice mode + glide (right)
-        auto modeBounds = bounds.removeFromRight(300).reduced(0, 12);
+        // Voice mode + glide + performance knobs (right)
+        auto modeBounds = bounds.removeFromRight(430).reduced(0, 12);
         // Glide Always toggle on the far right
         glideAlwaysButton.setBounds(modeBounds.removeFromRight(36).reduced(2));
         // Glide knob
-        auto glideBounds = modeBounds.removeFromRight(50);
+        auto glideBounds = modeBounds.removeFromRight(46);
         glideLabel.setBounds(glideBounds.removeFromBottom(12));
         glideSlider.setBounds(glideBounds);
+        // Pitch bend knob
+        auto pbBounds = modeBounds.removeFromRight(40);
+        pitchBendLabel.setBounds(pbBounds.removeFromBottom(12));
+        pitchBendSlider.setBounds(pbBounds);
+        // Velocity curve knob
+        auto velBounds = modeBounds.removeFromRight(40);
+        velCurveLabel.setBounds(velBounds.removeFromBottom(12));
+        velCurveSlider.setBounds(velBounds);
+        // Master level knob
+        auto volBounds = modeBounds.removeFromRight(40);
+        masterLevelLabel.setBounds(volBounds.removeFromBottom(12));
+        masterLevelSlider.setBounds(volBounds);
         // Voice mode buttons
         auto buttonWidth = modeBounds.getWidth() / 3;
         polyButton.setBounds(modeBounds.removeFromLeft(buttonWidth).reduced(2));
@@ -237,7 +288,10 @@ public:
         legatoButton.setToggleState(mode == 2, juce::dontSendNotification);
     }
 
-    juce::Slider& getGlideSlider() { return glideSlider; }
+    juce::Slider& getGlideSlider()        { return glideSlider; }
+    juce::Slider& getMasterLevelSlider()  { return masterLevelSlider; }
+    juce::Slider& getVelCurveSlider()     { return velCurveSlider; }
+    juce::Slider& getPitchBendSlider()    { return pitchBendSlider; }
 
     /** Set the real RMS level from the audio processor (0.0 - 1.0) */
     void setRmsLevel(float rms)
@@ -392,8 +446,14 @@ private:
     juce::TextButton monoButton;
     juce::TextButton legatoButton;
     juce::Slider glideSlider;
-    juce::Label glideLabel;
+    juce::Label  glideLabel;
     juce::TextButton glideAlwaysButton;
+    juce::Slider masterLevelSlider;
+    juce::Label  masterLevelLabel;
+    juce::Slider velCurveSlider;
+    juce::Label  velCurveLabel;
+    juce::Slider pitchBendSlider;
+    juce::Label  pitchBendLabel;
     juce::ComboBox presetCombo;
     juce::TextButton presetButton;
     juce::TextButton browserButton;

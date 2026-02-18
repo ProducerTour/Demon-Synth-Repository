@@ -307,6 +307,45 @@ private:
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>> sliderAttachments;
     std::vector<std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>> comboAttachments;
 
+    // MIDI learn right-click attachment for sliders
+    struct MidiLearnListener : public juce::MouseListener
+    {
+        MidiLearnListener(const juce::String& pid, PluginProcessor& p)
+            : paramId(pid), processor(p) {}
+
+        void mouseDown(const juce::MouseEvent& e) override
+        {
+            if (!e.mods.isRightButtonDown()) return;
+
+            juce::PopupMenu menu;
+            int cc = processor.getMidiLearn().getCCForParam(paramId);
+            if (cc >= 0)
+                menu.addItem(1, "Mapped to CC " + juce::String(cc), false, false);
+            menu.addItem(2, "MIDI Learn");
+            if (cc >= 0)
+                menu.addItem(3, "Clear MIDI Mapping");
+
+            menu.showMenuAsync(juce::PopupMenu::Options(), [this](int result) {
+                if (result == 2)
+                    processor.getMidiLearn().startLearning(paramId);
+                else if (result == 3)
+                    processor.getMidiLearn().clearMapping(paramId);
+            });
+        }
+
+        juce::String paramId;
+        PluginProcessor& processor;
+    };
+
+    void attachMidiLearn(juce::Slider& slider, const juce::String& paramId)
+    {
+        auto listener = std::make_unique<MidiLearnListener>(paramId, processor);
+        slider.addMouseListener(listener.get(), false);
+        midiLearnListeners.push_back(std::move(listener));
+    }
+
+    std::vector<std::unique_ptr<MidiLearnListener>> midiLearnListeners;
+
     // Tooltip window for hover help
     std::unique_ptr<juce::TooltipWindow> tooltipWindow;
 

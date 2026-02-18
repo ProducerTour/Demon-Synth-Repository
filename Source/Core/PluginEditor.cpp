@@ -154,6 +154,18 @@ PluginEditor::PluginEditor(PluginProcessor& p)
 
     addAndMakeVisible(tabbedPanel);
 
+    // Mod matrix routing callback — wires UI rows to audio engine
+    modMatrixPanel->onRoutingChanged = [this](int row, int srcId, int dstId, float amount) {
+        processor.setModMatrixRow(row, srcId, dstId, amount);
+    };
+
+    // Restore saved mod matrix routings into UI (in case state was loaded before editor opened)
+    {
+        const auto& rows = processor.getModMatrixRows();
+        for (int i = 0; i < 5; ++i)
+            modMatrixPanel->setRowRouting(i, rows[i].srcId, rows[i].dstId, rows[i].amount);
+    }
+
     // FX enable callbacks
     fxPanel->onReverbEnableChanged = [this](bool enabled) {
         if (auto* param = processor.getAPVTS().getParameter("reverb_enabled"))
@@ -386,9 +398,19 @@ PluginEditor::PluginEditor(PluginProcessor& p)
             param->setValueNotifyingHost(param->convertTo0to1(value));
     };
 
-    // Filter resonance knob attachment
+    // Filter resonance + keytrack knob attachments
     sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         apvts, "filter_reso", filterPanel.getResoSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "filter_keytrack", filterPanel.getKeytrackSlider()));
+
+    // Top bar performance knob attachments (previously missing from UI)
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "master_level", topBar.getMasterLevelSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "velocity_curve", topBar.getVelCurveSlider()));
+    sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        apvts, "pitch_bend_range", topBar.getPitchBendSlider()));
 
     // Filter env amount knob attachment
     sliderAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
@@ -477,6 +499,20 @@ PluginEditor::PluginEditor(PluginProcessor& p)
     {
         DBG("No preset name stored and no sample loaded - UI will show default");
     }
+
+    // ===== MIDI Learn right-click on key sliders =====
+    attachMidiLearn(filterPanel.getResoSlider(),        "filter_reso");
+    attachMidiLearn(filterPanel.getKeytrackSlider(),    "filter_keytrack");
+    attachMidiLearn(topBar.getMasterLevelSlider(),      "master_level");
+    attachMidiLearn(topBar.getVelCurveSlider(),         "velocity_curve");
+    attachMidiLearn(topBar.getPitchBendSlider(),        "pitch_bend_range");
+    attachMidiLearn(topBar.getGlideSlider(),            "glide_time");
+    attachMidiLearn(lfo1Panel.getRateSlider(),          "lfo1_rate");
+    attachMidiLearn(lfo2Panel.getRateSlider(),          "lfo2_rate");
+    attachMidiLearn(boostKnob.getSlider(),              "boost");
+    attachMidiLearn(airKnob.getSlider(),                "air");
+    attachMidiLearn(bodyKnob.getSlider(),               "body");
+    attachMidiLearn(warpKnob.getSlider(),               "warp");
 
     // ===== Tooltips =====
     tooltipWindow = std::make_unique<juce::TooltipWindow>(this, 500);

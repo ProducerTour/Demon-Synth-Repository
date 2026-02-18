@@ -93,6 +93,11 @@ public:
     // MIDI learn
     Modulation::MidiLearn& getMidiLearn() { return midiLearn; }
 
+    // Mod matrix routing (5 rows: srcId, dstId, amount)
+    struct ModRowData { int srcId = 1, dstId = 1; float amount = 0.0f; };
+    void setModMatrixRow(int row, int srcId, int dstId, float amount);
+    const std::array<ModRowData, 5>& getModMatrixRows() const { return modMatrixRows; }
+
 private:
     // Read config file for samples path
     juce::File readSamplesPathFromConfig();
@@ -145,6 +150,9 @@ private:
 
     // MIDI learn
     Modulation::MidiLearn midiLearn;
+
+    // Mod matrix UI routing storage
+    std::array<ModRowData, 5> modMatrixRows{};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };

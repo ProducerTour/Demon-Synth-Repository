@@ -38,7 +38,7 @@ public:
         syncButton.setColour(juce::TextButton::textColourOffId, HellcatColors::textTertiary);
         syncButton.setColour(juce::TextButton::textColourOnId, HellcatColors::textPrimary);
         syncButton.setClickingTogglesState(true);
-        syncButton.setTooltip("Sync LFO to note retrigger");
+        syncButton.setTooltip("Sync LFO rate to host tempo (scales with BPM, baseline 120)");
         syncButton.onClick = [this]() {
             if (onSyncChange) onSyncChange(syncButton.getToggleState());
         };
