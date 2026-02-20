@@ -69,6 +69,8 @@ jobs:
   # ─────────────────────────────────────────────────────────
   build-macos:
     runs-on: macos-latest
+    env:
+      APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
 
     steps:
       - name: Checkout code
@@ -84,7 +86,7 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Import signing certificate
-        if: ${{ secrets.APPLE_CERT_P12 != '' }}
+        if: env.APPLE_CERT_P12 != ''
         env:
           CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
           CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
@@ -98,7 +100,7 @@ jobs:
           rm /tmp/cert.p12
 
       - name: Sign VST3
-        if: ${{ secrets.APPLE_CERT_P12 != '' }}
+        if: env.APPLE_CERT_P12 != ''
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -108,7 +110,7 @@ jobs:
             "build/NulyBeatsPlugin_artefacts/Release/VST3/Demon Synth.vst3"
 
       - name: Sign AU
-        if: ${{ secrets.APPLE_CERT_P12 != '' }}
+        if: env.APPLE_CERT_P12 != ''
         env:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -118,7 +120,7 @@ jobs:
             "build/NulyBeatsPlugin_artefacts/Release/AU/Demon Synth.component"
 
       - name: Notarize and staple
-        if: ${{ secrets.APPLE_CERT_P12 != '' }}
+        if: env.APPLE_CERT_P12 != ''
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           NOTARIZE_PASSWORD: ${{ secrets.APPLE_NOTARIZE_PASSWORD }}
