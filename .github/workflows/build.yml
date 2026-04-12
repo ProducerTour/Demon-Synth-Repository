@@ -105,7 +105,7 @@ jobs:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           codesign --deep --force --verify --verbose \
-            --sign "Developer ID Application: NullyBeats ($TEAM_ID)" \
+            --sign "Developer ID Application: Producer Tour LLC ($TEAM_ID)" \
             --options runtime \
             "build/NulyBeatsPlugin_artefacts/Release/VST3/Demon Synth.vst3"
 
@@ -115,7 +115,7 @@ jobs:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           codesign --deep --force --verify --verbose \
-            --sign "Developer ID Application: NullyBeats ($TEAM_ID)" \
+            --sign "Developer ID Application: Producer Tour LLC ($TEAM_ID)" \
             --options runtime \
             "build/NulyBeatsPlugin_artefacts/Release/AU/Demon Synth.component"
 
