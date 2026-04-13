@@ -137,18 +137,18 @@ jobs:
           xcrun stapler staple "$VST3"
           xcrun stapler staple "$AU"
 
-      - name: Upload macOS VST3
-        uses: actions/upload-artifact@v4
-        with:
-          name: DemonSynth-macOS-VST3
-          path: build/NulyBeatsPlugin_artefacts/Release/VST3/
-          retention-days: 90
+      - name: Package macOS installer zip
+        run: |
+          cd build/NulyBeatsPlugin_artefacts/Release
+          zip -r "$GITHUB_WORKSPACE/DemonSynth_v1.0.0_macOS.zip" \
+            "VST3/Demon Synth.vst3" \
+            "AU/Demon Synth.component"
 
-      - name: Upload macOS AU
+      - name: Upload macOS Installer
         uses: actions/upload-artifact@v4
         with:
-          name: DemonSynth-macOS-AU
-          path: build/NulyBeatsPlugin_artefacts/Release/AU/
+          name: DemonSynth-macOS-Installer
+          path: DemonSynth_v1.0.0_macOS.zip
           retention-days: 90
 
   # ─────────────────────────────────────────────────────────
@@ -179,11 +179,12 @@ jobs:
             ### Installation
 
             **macOS**
-            - Download `DemonSynth-macOS-VST3` → copy `Demon Synth.vst3` to `/Library/Audio/Plug-Ins/VST3/`
-            - Download `DemonSynth-macOS-AU` → copy `Demon Synth.component` to `/Library/Audio/Plug-Ins/Components/`
+            - Download `DemonSynth_v1.0.0_macOS.zip` and unzip
+            - Copy `Demon Synth.vst3` to `/Library/Audio/Plug-Ins/VST3/`
+            - Copy `Demon Synth.component` to `/Library/Audio/Plug-Ins/Components/`
 
             **Windows**
-            - Run `DemonSynth-Windows-Installer` and follow the prompts
+            - Run `DemonSynth_v1.0.0_Windows.exe` and follow the prompts
 
             ### Samples
             See README for Strings sample library installation.
